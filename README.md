@@ -20,7 +20,7 @@ ElliotPy is an advanced, high-performance Elliott Wave engine and interactive vi
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/ProsperPanda/ElliotPy.git
+   git clone https://github.com/ubermachine/ElliotPy.git
    cd ElliotPy
    ```
 
@@ -42,7 +42,7 @@ If you want to use the in-app **"Resync & Push to GitHub"** feature on the cloud
 
 ```toml
 GITHUB_TOKEN = "ghp_your_personal_access_token_here"
-GITHUB_REPO = "ProsperPanda/ElliotPy"
+GITHUB_REPO = "ubermachine/ElliotPy"
 ```
 *(Ensure your Personal Access Token has write permissions to the repository).*
 
