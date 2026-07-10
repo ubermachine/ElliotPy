@@ -27,6 +27,11 @@ class VolumeProfileEngine:
             high = row['High']
             vol = row['Volume']
             
+            # TPO Fallback: If volume is 0, missing, or NaN (common for Yahoo Finance commodities),
+            # we use Time Price Opportunity (TPO) counting by assigning a weight of 1 per day.
+            if pd.isna(vol) or vol <= 0:
+                vol = 1.0
+            
             if high == low:
                 # Add to single bin
                 idx = np.digitize(high, bin_edges) - 1
