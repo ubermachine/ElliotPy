@@ -1009,13 +1009,21 @@ with tab_inst:
     from backend.institutional_engine import PointAndFigureEngine, VolumeProfileEngine
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+
+    import datetime
     
+    # Filter data to strictly the last 3 months (90 days)
+    last_date = df['Date'].iloc[-1]
+    three_months_ago = last_date - datetime.timedelta(days=90)
+    inst_df = df[df['Date'] >= three_months_ago].copy()
+    
+    date_range_str = f"{inst_df['Date'].iloc[0].strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}"
+
     # Calculate Data First for Summary
-    pnf_engine = PointAndFigureEngine(df, box_size_pct=0.01, reversal_amount=3)
+    pnf_engine = PointAndFigureEngine(inst_df, box_size_pct=0.01, reversal_amount=3)
     pnf_cols = pnf_engine.calculate_pnf()
     
-    visible_df = df.tail(zoom_bars)
-    vp_engine = VolumeProfileEngine(visible_df, bins=60)
+    vp_engine = VolumeProfileEngine(inst_df, bins=60)
     profile_data = vp_engine.calculate_profile()
     
     # Render Summary
@@ -1023,7 +1031,7 @@ with tab_inst:
         last_pnf_col = pnf_cols[-1]
         pnf_trend = "🟢 DEMAND CONTROL (Accumulation / Markup)" if last_pnf_col["type"] == "X" else "🔴 SUPPLY CONTROL (Distribution / Markdown)"
         
-        last_close = visible_df['Close'].iloc[-1]
+        last_close = inst_df['Close'].iloc[-1]
         vah = profile_data["vah"]
         val = profile_data["val"]
         poc = profile_data["poc"]
@@ -1035,16 +1043,16 @@ with tab_inst:
         else:
             profile_state = f"🟡 RESPONSIVE / BALANCED (Price {last_close:,.2f} is inside the Value Area, rotating around POC {poc:,.2f})"
             
-        st.info(f"**P&F Trend Engine:** {pnf_trend}")
-        st.info(f"**Market Profile Engine:** {profile_state}")
+        st.info(f"**P&F Trend Engine (Last 3 Months):** {pnf_trend}")
+        st.info(f"**Market Profile Engine (Last 3 Months):** {profile_state}")
     
     st.markdown("---")
-
+    
     # --- POINT & FIGURE CHART ---
     st.markdown("### Point & Figure (1% x 3)")
     
     if not pnf_cols:
-        st.info("Not enough data to build P&F chart.")
+        st.info("Not enough data to build P&F chart for the last 3 months.")
     else:
         fig_pnf = go.Figure()
         for i, col in enumerate(pnf_cols):
@@ -1065,7 +1073,7 @@ with tab_inst:
             ))
             
         fig_pnf.update_layout(
-            title="Point & Figure Base (1% Box, 3-Box Reversal)",
+            title=f"Point & Figure Base (1% Box, 3-Box Reversal) | {date_range_str}",
             plot_bgcolor='#0F172A',
             paper_bgcolor='#0B0F19',
             height=600,
@@ -1095,7 +1103,7 @@ with tab_inst:
     st.markdown("### Market Profile (Volume TPOs)")
     
     if not profile_data:
-        st.info("Not enough data for Market Profile.")
+        st.info("Not enough data for Market Profile in the last 3 months.")
     else:
         fig_vp = go.Figure()
         
@@ -1132,8 +1140,8 @@ with tab_inst:
         
         # Add Price line overlay
         fig_vp.add_trace(go.Scatter(
-            y=visible_df['Close'],
-            x=[max(vols)*0.05] * len(visible_df), # Draw it close to Y-axis
+            y=inst_df['Close'],
+            x=[max(vols)*0.05] * len(inst_df), # Draw it close to Y-axis
             mode="lines",
             line=dict(color="#FFFFFF", width=1.5),
             name="Closing Price Path",
@@ -1142,7 +1150,7 @@ with tab_inst:
         ))
 
         fig_vp.update_layout(
-            title="Market Profile (Visible Range Volume)",
+            title=f"Market Profile (Visible Range Volume) | {date_range_str}",
             plot_bgcolor='#0F172A',
             paper_bgcolor='#0B0F19',
             height=600,
@@ -1173,4 +1181,6 @@ with tab_inst:
             margin=dict(l=20, r=60, t=60, b=40)
         )
         st.plotly_chart(fig_vp, use_container_width=True)
+    
+    # Calculate Data First for Summary
     
