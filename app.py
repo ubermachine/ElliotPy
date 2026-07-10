@@ -609,6 +609,13 @@ if primary_count:
             annotation_font=dict(color="#10B981", size=11, family="Outfit"),
             row=1, col=1
         )
+        # Dummy trace for legend
+        fig.add_trace(go.Scattergl(
+            x=[None], y=[None], mode='lines',
+            line=dict(color="#10B981", dash="dot", width=2),
+            name="🎯 Primary Target",
+            showlegend=True
+        ), row=1, col=1)
 
 if alternates:
     last_block_alt = find_last_wave_block(alternates[0])
@@ -624,6 +631,13 @@ if alternates:
             annotation_font=dict(color="#F59E0B", size=11, family="Outfit"),
             row=1, col=1
         )
+        # Dummy trace for legend
+        fig.add_trace(go.Scattergl(
+            x=[None], y=[None], mode='lines',
+            line=dict(color="#F59E0B", dash="dot", width=2),
+            name="🔀 Alternate Target",
+            showlegend=True
+        ), row=1, col=1)
 
     
 # Add RSI Trace
