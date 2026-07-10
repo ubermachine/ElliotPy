@@ -594,33 +594,36 @@ if invalidation_price is not None:
         row=1, col=1
     )
 
-# Get Trade Recommendation
-last_block = find_last_wave_block(active_waves)
-rec = engine.get_trade_recommendation(last_block)
-if rec["target"] is not None:
-    # Add a target line
-    fig.add_hline(
-        y=rec["target"],
-        line_color="#00FF00",
-        line_dash="dot",
-        line_width=1.5,
-        annotation_text="Take Profit Target",
-        annotation_position="top right",
-        annotation_font=dict(color="#00FF00", size=10),
-        row=1, col=1
-    )
-    # Add a shaded Entry Zone between current price and a slightly better price (e.g. 5% retracement)
-    curr_price = rec["current_price"]
-    zone_y0 = curr_price
-    zone_y1 = curr_price * 1.05 if "Bullish" in rec["bias"] else curr_price * 0.95
-    fig.add_shape(
-        type="rect",
-        x0=df['Date'].iloc[-1], y0=zone_y0,
-        x1=df['Date'].iloc[-1] + datetime.timedelta(days=15), y1=zone_y1,
-        fillcolor="rgba(0, 255, 0, 0.1)" if "Bullish" in rec["bias"] else "rgba(255, 0, 0, 0.1)",
-        line=dict(width=0),
-        row=1, col=1
-    )
+# Plot Targets for both Primary and Alternate Scenarios
+if primary_count:
+    last_block = find_last_wave_block(primary_count)
+    rec = engine.get_trade_recommendation(last_block)
+    if rec["target"] is not None:
+        fig.add_hline(
+            y=rec["target"],
+            line_color="#10B981",
+            line_dash="dot",
+            line_width=2,
+            annotation_text="🎯 Primary Target",
+            annotation_position="top right",
+            annotation_font=dict(color="#10B981", size=11, fontfamily="Outfit"),
+            row=1, col=1
+        )
+
+if alternates:
+    last_block_alt = find_last_wave_block(alternates[0])
+    rec_alt = engine.get_trade_recommendation(last_block_alt)
+    if rec_alt["target"] is not None and rec_alt["target"] != rec.get("target"):
+        fig.add_hline(
+            y=rec_alt["target"],
+            line_color="#F59E0B",
+            line_dash="dot",
+            line_width=2,
+            annotation_text="🔀 Alternate Target",
+            annotation_position="bottom right",
+            annotation_font=dict(color="#F59E0B", size=11, fontfamily="Outfit"),
+            row=1, col=1
+        )
 
     
 # Add RSI Trace
