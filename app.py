@@ -406,17 +406,25 @@ def get_pivots(df: pd.DataFrame, use_log: bool, atr_multiplier: float):
     pivots_t2 = engine.run_adaptive_zigzag(atr_multiplier * 0.5)
     return pivots_t1, pivots_t2
 
-# Check for Incremental Resync trigger in sidebar
-if st.sidebar.button("🔄 Resync & Push to GitHub", help="Downloads new data and pushes updated DB to GitHub."):
+# Check for Incremental Resync or GitHub Push trigger in sidebar
+sync_clicked = st.sidebar.button("🔄 Incremental Resync", help="Downloads and appends new daily bars since the last cached date.")
+push_clicked = st.sidebar.button("📤 Push to GitHub", help="Pushes the current cached database to GitHub.")
+
+if sync_clicked:
     st.cache_data.clear()  # Clear cache to force reload
     try:
         df, auto_log = get_incremental_sync(active_symbol)
-        st.sidebar.success("Data synced successfully! Pushing to GitHub...")
-        
-        # Git Push logic
-        if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
-            st.sidebar.warning("GitHub Sync skipped: Missing GITHUB_TOKEN or GITHUB_REPO in Streamlit secrets.")
-        else:
+        st.sidebar.success("Data synced successfully!")
+    except Exception as e:
+        st.sidebar.error(f"Sync error: {e}")
+        df, auto_log = get_historical_data(active_symbol)
+elif push_clicked:
+    df, auto_log = get_historical_data(active_symbol)
+    if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
+        st.sidebar.warning("GitHub Sync skipped: Missing GITHUB_TOKEN or GITHUB_REPO in Streamlit secrets.")
+    else:
+        st.sidebar.info("Pushing to GitHub...")
+        try:
             token = st.secrets["GITHUB_TOKEN"]
             repo = st.secrets["GITHUB_REPO"]
             subprocess.run(["git", "config", "--global", "user.email", "bot@elliotpy.local"], check=False)
@@ -431,12 +439,10 @@ if st.sidebar.button("🔄 Resync & Push to GitHub", help="Downloads new data an
                 subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
                 subprocess.run(["git", "push", "origin", "main"], check=True)
                 st.sidebar.success("Successfully pushed database to GitHub!")
-                
-    except subprocess.CalledProcessError as e:
-        st.sidebar.error(f"GitHub Sync Failed: {e.stderr or e.output}")
-    except Exception as e:
-        st.sidebar.error(f"Sync error: {e}")
-        df, auto_log = get_historical_data(active_symbol)
+        except subprocess.CalledProcessError as e:
+            st.sidebar.error(f"GitHub Sync Failed: {e.stderr or e.output}")
+        except Exception as e:
+            st.sidebar.error(f"Push error: {e}")
 else:
     df, auto_log = get_historical_data(active_symbol)
 
@@ -502,23 +508,7 @@ fig = make_subplots(
     row_heights=[0.60, 0.20, 0.20]
 )
 
-# Determine trend color for price line based on last detected wave direction
-_price_line_color = "#ffffff"
-if active_waves:
-    last_w = active_waves[-1]
-    _is_bull = last_w.end_pivot.price > last_w.start_pivot.price
-    _price_line_color = "#00F0FF" if _is_bull else "#FF4A6B"
 
-# Add Line Chart with area fill
-fig.add_trace(go.Scattergl(
-    x=df['Date'],
-    y=df['Close'],
-    mode='lines',
-    name="Price",
-    line=dict(color=_price_line_color, width=1.5),
-    fill='tozeroy',
-    fillcolor='rgba(0,240,255,0.04)'
-), row=1, col=1)
 
 # Calculate full swings
 pivots_t1, pivots_t2 = get_pivots(df, use_log, atr_multiplier)
@@ -560,6 +550,24 @@ if selected_count_name == "Primary Count (Highest Score)" and is_invalidated and
 elif selected_count_name != "Primary Count (Highest Score)":
     alt_idx = int(selected_count_name.split("#")[-1]) - 1
     active_waves = alternates[alt_idx]
+
+# Determine trend color for price line based on last detected wave direction
+_price_line_color = "#ffffff"
+if active_waves:
+    last_w = active_waves[-1]
+    _is_bull = last_w.end_pivot.price > last_w.start_pivot.price
+    _price_line_color = "#00F0FF" if _is_bull else "#FF4A6B"
+
+# Add Line Chart with area fill
+fig.add_trace(go.Scattergl(
+    x=df['Date'],
+    y=df['Close'],
+    mode='lines',
+    name="Price",
+    line=dict(color=_price_line_color, width=1.5),
+    fill='tozeroy',
+    fillcolor='rgba(0,240,255,0.04)'
+), row=1, col=1)
     
 
 
