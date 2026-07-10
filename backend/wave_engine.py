@@ -95,7 +95,8 @@ class DailyElliottWaveEngine:
         self.df['MACD_Hist'] = histogram
 
         # Calculate adaptive Zig-Zag thresholds per bar
-        self.df['min_move_pct'] = np.maximum(0.02, (self.df['ATR'] / self.df['Close']) * 1.5)
+        # Pure ATR sensitivity (no arbitrary % floors) prevents "big guess" waves
+        self.df['min_move_pct'] = (self.df['ATR'] / self.df['Close']) * 1.2
 
     def _calculate_rsi_14(self) -> pd.Series:
         delta = self.df['Close'].diff()
@@ -368,7 +369,7 @@ class DailyElliottWaveEngine:
     def _get_pivot_vals(self, pivots: List[Pivot]) -> List[float]:
         return [p.log_price if self.use_log_scale else p.price for p in pivots]
 
-    def _get_atr_buffer(self, pivot: Pivot, multiplier: float = 0.5) -> float:
+    def _get_atr_buffer(self, pivot: Pivot, multiplier: float = 0.3) -> float:
         atr = float(self.df['ATR'].iloc[pivot.index])
         if self.use_log_scale:
             close = float(self.df['Close'].iloc[pivot.index])
