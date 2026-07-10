@@ -774,10 +774,20 @@ with col_stats:
             
             st.markdown(f"""
             <div style="background-color: {bg_color}; border-left: 4px solid {bias_color}; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
-                <h4 style="color: {bias_color}; margin-top: 0; margin-bottom: 10px;">🎯 Primary Count ({(conf*100):.0f}% Prob)</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="color: {bias_color}; margin: 0;">🎯 Primary Count</h4>
+                    <span style="color: {bias_color}; font-weight: bold; font-size: 14px;">{(conf*100):.0f}% Prob</span>
+                </div>
                 <p style="margin: 5px 0;"><b>Scenario:</b> {p_count.get('scenario')} ({p_count.get('larger_context')})</p>
-                <p style="margin: 5px 0;"><b>Trend Bias:</b> <span style="color: {bias_color}; font-weight: 600;">{trend}</span></p>
+                <p style="margin: 5px 0; margin-bottom: 10px;"><b>Trend Bias:</b> <span style="color: {bias_color}; font-weight: 600;">{trend}</span></p>
             """, unsafe_allow_html=True)
+            
+            st.progress(conf)
+            
+            guidelines = p_count.get("guidelines_met", [])
+            if guidelines:
+                gl_html = " ".join([f"<span style='background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60A5FA; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{g}</span>" for g in guidelines])
+                st.markdown(f"<div style='margin: 10px 0;'>{gl_html}</div>", unsafe_allow_html=True)
             
             recent = p_count.get("recent_waves", [])
             if recent:
@@ -807,9 +817,20 @@ with col_stats:
             with st.expander(f"🔀 View Alternate Count ({(a_conf*100):.0f}% Prob)"):
                 st.markdown(f"""
                 <div style="background-color: {a_bg_color}; border-left: 4px solid {a_color}; padding: 15px; border-radius: 4px; margin-top: 5px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h5 style="color: {a_color}; margin: 0;">🔄 Alternate Scenario</h5>
+                        <span style="color: {a_color}; font-weight: bold; font-size: 13px;">{(a_conf*100):.0f}% Prob</span>
+                    </div>
                     <p style="margin: 5px 0;"><b>Scenario:</b> {a_count.get('scenario')} ({a_count.get('larger_context')})</p>
-                    <p style="margin: 5px 0;"><b>Trend Bias:</b> <span style="color: {a_color}; font-weight: 600;">{a_trend}</span></p>
+                    <p style="margin: 5px 0; margin-bottom: 10px;"><b>Trend Bias:</b> <span style="color: {a_color}; font-weight: 600;">{a_trend}</span></p>
                 """, unsafe_allow_html=True)
+                
+                st.progress(a_conf)
+                
+                a_guidelines = a_count.get("guidelines_met", [])
+                if a_guidelines:
+                    agl_html = " ".join([f"<span style='background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60A5FA; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{g}</span>" for g in a_guidelines])
+                    st.markdown(f"<div style='margin: 10px 0;'>{agl_html}</div>", unsafe_allow_html=True)
                 
                 a_action = a_count.get("actionable", {})
                 if a_action:

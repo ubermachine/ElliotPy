@@ -846,7 +846,7 @@ class DailyElliottWaveEngine:
             return degree_waves
 
     def get_summary_engine_payload(self, primary_waves: List[WaveNode], alternate_waves: List[List[WaveNode]]) -> Dict[str, Any]:
-        def build_count_data(waves: List[WaveNode], is_primary: bool):
+        def build_count_data(waves: List[WaveNode]):
             if not waves:
                 return None
             last_block = self._find_last_wave_block(waves)
@@ -859,27 +859,52 @@ class DailyElliottWaveEngine:
             larger_context = f"Wave {last_wave.label} of {last_wave.degree}"
             trend = rec["bias"]
             
-            # Confidence Score
-            if len(last_block) == 5:
-                pivs = [last_block[0].start_pivot] + [w.end_pivot for w in last_block]
-                score = self.score_impulse(pivs)
-            elif len(last_block) == 3:
-                score = 3.0
-            else:
-                score = 1.0
-                
-            # Normalize score
-            raw_conf = min(0.99, score / 10.0)
-            confidence_score = round(raw_conf if is_primary else raw_conf * 0.3, 2)
+            pivs = [last_block[0].start_pivot] + [w.end_pivot for w in last_block]
             
-            # Guidelines met (mocked for simplicity, in real scenario would extract from checklist)
+            # Confidence Score & Guidelines
             guidelines = []
-            if len(last_block) >= 3:
-                guidelines.append("Alternation Check")
+            score = 1.0
+            
             if len(last_block) == 5:
-                guidelines.append("Wave 3 Extension")
-                if 'RSI' in self.df.columns:
-                    guidelines.append("Momentum Confluence")
+                score = self.score_impulse(pivs)
+                # Check momentum confluence
+                if 'MACD_Hist' in self.df.columns and not pd.isna(self.df['MACD_Hist'].iloc[pivs[-1].index]):
+                    macd_val = self.df['MACD_Hist'].iloc[pivs[-1].index]
+                    if (trend == "Bullish" and macd_val > 0) or (trend == "Bearish" and macd_val < 0):
+                        score += 1.5
+                        guidelines.append("MACD Momentum Confluence")
+                
+                is_valid, checklist = self.verify_impulse_rules(pivs)
+                for item in checklist:
+                    if item["status"] and not item["rule"].startswith("W2"):
+                        # Keep guidelines brief
+                        guidelines.append(item["rule"])
+                
+                # Check Alternation specifically
+                v = self._get_pivot_vals(pivs)
+                w2, w4, w1, w3 = abs(v[2]-v[1]), abs(v[4]-v[3]), abs(v[1]-v[0]), abs(v[3]-v[2])
+                r2 = w2/w1 if w1 > 0 else 0
+                r4 = w4/w3 if w3 > 0 else 0
+                if (r2 > 0.50 and r4 < 0.382) or (r2 < 0.382 and r4 > 0.50):
+                    score += 1.0
+                    guidelines.append("W2/W4 Alternation")
+                    
+            elif len(last_block) >= 3:
+                is_zz, zz_check = self.verify_zigzag_rules(pivs[:4])
+                is_flat, flat_check = self.verify_flat_rules(pivs[:4])
+                if is_flat and not is_zz:
+                    score = 4.0
+                    checklist = flat_check
+                elif is_zz:
+                    score = 5.0
+                    checklist = zz_check
+                else:
+                    score = 2.0
+                    checklist = zz_check
+                    
+                for item in checklist:
+                    if item["status"]:
+                        guidelines.append(item["rule"])
             
             actionable = {}
             target = rec["target"]
@@ -894,30 +919,52 @@ class DailyElliottWaveEngine:
                 if risk > 0:
                     actionable["risk_reward_ratio"] = round(reward / risk, 2)
                     
-            recent_waves = []
-            for w in waves[-4:]:
-                recent_waves.append({
-                    "label": w.label,
-                    "tier_price": round(w.end_pivot.price, 2)
-                })
+            recent_waves = [{"label": w.label, "tier_price": round(w.end_pivot.price, 2)} for w in waves[-4:]]
                     
             res = {
                 "scenario": scenario,
                 "larger_context": larger_context,
                 "trend": trend,
-                "confidence_score": confidence_score,
+                "raw_score": score,
+                "guidelines_met": guidelines,
                 "recent_waves": recent_waves,
                 "actionable": actionable
             }
-            if is_primary:
-                res["guidelines_met"] = guidelines
             return res
+
+        p_data = build_count_data(primary_waves)
+        a_data = build_count_data(alternate_waves[0] if alternate_waves else [])
+        
+        # Normalize Probabilities (Max 95%)
+        p_score = p_data["raw_score"] if p_data else 0.0
+        a_score = a_data["raw_score"] if a_data else 0.0
+        
+        # Swap logic if Alternate structurally scores higher than Primary!
+        if a_data and p_data and a_score > p_score:
+            p_data, a_data = a_data, p_data
+            p_score, a_score = a_score, p_score
+            
+        total_score = p_score + a_score
+        if total_score == 0:
+            total_score = 1
+            
+        if p_data:
+            p_prob = min(0.95, p_score / max(total_score, 10.0))
+            if not a_data:
+                p_prob = min(0.95, p_score / 10.0)
+            p_data["confidence_score"] = round(p_prob, 2)
+            
+        if a_data:
+            a_prob = min(0.95 - p_data["confidence_score"], a_score / max(total_score, 10.0))
+            if a_prob < 0.01:
+                a_prob = 0.01
+            a_data["confidence_score"] = round(a_prob, 2)
 
         payload = {
             "summary": {
                 "current_degree": primary_waves[-1].degree if primary_waves else "Unknown",
-                "primary_count": build_count_data(primary_waves, True),
-                "alternate_count": build_count_data(alternate_waves[0] if alternate_waves else [], False)
+                "primary_count": p_data,
+                "alternate_count": a_data
             }
         }
         return payload
