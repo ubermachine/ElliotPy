@@ -1010,12 +1010,40 @@ with tab_inst:
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     
+    # Calculate Data First for Summary
+    pnf_engine = PointAndFigureEngine(df, box_size_pct=0.01, reversal_amount=3)
+    pnf_cols = pnf_engine.calculate_pnf()
+    
+    visible_df = df.tail(zoom_bars)
+    vp_engine = VolumeProfileEngine(visible_df, bins=60)
+    profile_data = vp_engine.calculate_profile()
+    
+    # Render Summary
+    if pnf_cols and profile_data:
+        last_pnf_col = pnf_cols[-1]
+        pnf_trend = "🟢 DEMAND CONTROL (Accumulation / Markup)" if last_pnf_col["type"] == "X" else "🔴 SUPPLY CONTROL (Distribution / Markdown)"
+        
+        last_close = visible_df['Close'].iloc[-1]
+        vah = profile_data["vah"]
+        val = profile_data["val"]
+        poc = profile_data["poc"]
+        
+        if last_close > vah:
+            profile_state = f"🟢 INITIATIVE BUYING (Price {last_close:,.2f} is breaking out above Value Area High {vah:,.2f})"
+        elif last_close < val:
+            profile_state = f"🔴 INITIATIVE SELLING (Price {last_close:,.2f} is breaking down below Value Area Low {val:,.2f})"
+        else:
+            profile_state = f"🟡 RESPONSIVE / BALANCED (Price {last_close:,.2f} is inside the Value Area, rotating around POC {poc:,.2f})"
+            
+        st.info(f"**P&F Trend Engine:** {pnf_trend}")
+        st.info(f"**Market Profile Engine:** {profile_state}")
+    
+    st.markdown("---")
+    
     col_pnf, col_vp = st.columns([1, 1])
     
     with col_pnf:
         st.markdown("### Point & Figure (1% x 3)")
-        pnf_engine = PointAndFigureEngine(df, box_size_pct=0.01, reversal_amount=3)
-        pnf_cols = pnf_engine.calculate_pnf()
         
         if not pnf_cols:
             st.info("Not enough data to build P&F chart.")
@@ -1054,9 +1082,6 @@ with tab_inst:
 
     with col_vp:
         st.markdown("### Market Profile (Volume)")
-        visible_df = df.tail(zoom_bars)
-        vp_engine = VolumeProfileEngine(visible_df, bins=60)
-        profile_data = vp_engine.calculate_profile()
         
         if not profile_data:
             st.info("Not enough data for Market Profile.")
@@ -1118,4 +1143,3 @@ with tab_inst:
                 margin=dict(l=20, r=20, t=20, b=20)
             )
             st.plotly_chart(fig_vp, use_container_width=True)
-
