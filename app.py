@@ -88,8 +88,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper to keep a drawn-pivot registry to avoid duplicate label stacking
+_drawn_pivots: set = set()
+
 # Helper function to recursively draw waves
-def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth: int, show_confidence: bool):
+def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth: int, show_confidence: bool, _drawn: set = None):
+    if _drawn is None:
+        _drawn = set()
     degree_map = {'Cycle': 1, 'Primary': 2, 'Intermediate': 3, 'Minor': 4, 'Minuette': 5}
     if degree_map.get(wave.degree, 6) > degree_depth:
         return
@@ -153,50 +158,62 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
     if getattr(wave, 'is_truncated', False):
         label_text += " (Truncated)"
     
-    # Text positioning with background
-    fig.add_trace(go.Scattergl(
-        x=[wave.end_pivot.time],
-        y=[wave.end_pivot.price],
-        mode='markers+text',
-        text=[label_text],
-        textposition="top center" if is_high else "bottom center",
-        textfont=dict(
-            color="#FFFFFF" if wave.degree in ["Cycle", "Primary"] else color,
-            size=14 if wave.degree in ["Cycle", "Primary"] else 12,
-            family="'Inter', sans-serif",
-            weight="bold"
-        ),
-        marker=dict(
-            color=color,
-            size=8 if wave.degree in ["Cycle", "Primary"] else 5,
-            symbol="circle",
-            line=dict(color="#0B0F19", width=1.5)
-        ),
-        name=f"Pivot {wave.label}",
-        showlegend=False,
-        hoverinfo='text',
-        hovertext=f"<b>Wave {wave.label}</b><br>Degree: {wave.degree}<br>Price: {wave.end_pivot.price:,.2f}<br>Date: {wave.end_pivot.time}"
-    ), row=1, col=1)
+    # Label deduplication: skip if this pivot has already been drawn at this degree
+    pivot_key = (wave.end_pivot.time, wave.degree)
+    if pivot_key not in _drawn:
+        _drawn.add(pivot_key)
+        # Text positioning with background
+        fib_hint = ""
+        if wave.fib_levels:
+            nearest_fib = min(wave.fib_levels.values(), key=lambda x: abs(x - wave.end_pivot.price))
+            fib_ratio = min(wave.fib_levels.keys(), key=lambda k: abs(wave.fib_levels[k] - wave.end_pivot.price))
+            fib_hint = f"<br>Near Fib {fib_ratio}"
+        score_hint = f"<br>Score: {wave.score:.1f}" if wave.score > 0 else ""
+        fig.add_trace(go.Scattergl(
+            x=[wave.end_pivot.time],
+            y=[wave.end_pivot.price],
+            mode='markers+text',
+            text=[label_text],
+            textposition="top center" if is_high else "bottom center",
+            textfont=dict(
+                color="#FFFFFF" if wave.degree in ["Cycle", "Primary"] else color,
+                size=14 if wave.degree in ["Cycle", "Primary"] else 12,
+                family="'Inter', sans-serif",
+                weight="bold"
+            ),
+            marker=dict(
+                color=color,
+                size=8 if wave.degree in ["Cycle", "Primary"] else 5,
+                symbol="circle",
+                line=dict(color="#0B0F19", width=1.5)
+            ),
+            name=f"Pivot {wave.label}",
+            showlegend=False,
+            hoverinfo='text',
+            hovertext=f"<b>Wave {wave.label}</b><br>Degree: {wave.degree}<br>Price: {wave.end_pivot.price:,.2f}<br>Date: {wave.end_pivot.time}{score_hint}{fib_hint}"
+        ), row=1, col=1)
     
     # Draw start pivot label for the very first wave in sequence
-    # to show the anchor start label e.g. [0] or start point
     if wave.label in ["[1]", "(1)", "1", "I", "i"]:
-        start_offset = 0.985 if is_high else 1.015
-        fig.add_trace(go.Scattergl(
-            x=[wave.start_pivot.time],
-            y=[wave.start_pivot.price * start_offset],
-            mode='text+markers',
-            text=["0"],
-            textposition="bottom center" if is_high else "top center",
-            textfont=dict(color=color, size=11),
-            marker=dict(color=color, size=4, symbol="square"),
-            showlegend=False,
-            hoverinfo='skip'
-        ), row=1, col=1)
+        start_key = (wave.start_pivot.time, wave.degree + "_start")
+        if start_key not in _drawn:
+            _drawn.add(start_key)
+            start_offset = 0.985 if is_high else 1.015
+            fig.add_trace(go.Scattergl(
+                x=[wave.start_pivot.time],
+                y=[wave.start_pivot.price * start_offset],
+                mode='text+markers',
+                text=["0"],
+                textposition="bottom center" if is_high else "top center",
+                textfont=dict(color=color, size=11),
+                marker=dict(color=color, size=4, symbol="square"),
+                showlegend=False,
+                hoverinfo='skip'
+            ), row=1, col=1)
 
     # Recurse children sub-waves
     for sw in wave.sub_waves:
-        add_wave_traces(fig, sw, use_log, degree_depth, show_confidence)
+        add_wave_traces(fig, sw, use_log, degree_depth, show_confidence, _drawn)
 
 def find_last_motive_sequence(waves: list[WaveNode]) -> list[WaveNode]:
     """Finds the most recent 5-wave motive sequence in a list of waves."""
@@ -233,38 +250,50 @@ def find_last_wave_block(waves: list[WaveNode]) -> list[WaveNode]:
             return degree_waves[-3:]
         return degree_waves
 
-def add_w5_projection(fig: go.Figure, waves: list[WaveNode], use_log: bool):
-    """Draws W5 expectations if we are currently looking at a 5-wave motive sequence."""
+def add_w5_projection(fig: go.Figure, waves: list, use_log: bool):
+    """Draws W5 expectation zones using three Fib projections from W4 end."""
     if len(waves) < 4:
         return
     w1, w2, w3, w4 = waves[0], waves[1], waves[2], waves[3]
-    
+
     v0 = w1.start_pivot.log_price if use_log else w1.start_pivot.price
     v3 = w3.end_pivot.log_price if use_log else w3.end_pivot.price
     v4 = w4.end_pivot.log_price if use_log else w4.end_pivot.price
-    
+
     range_13 = abs(v3 - v0)
-    
-    t1_val = v4 + 0.618 * range_13 if (v3 > v0) else v4 - 0.618 * range_13
-    t2_val = v4 + 1.0 * range_13 if (v3 > v0) else v4 - 1.0 * range_13
-    
-    if use_log:
-        t1_val = np.exp(t1_val)
-        t2_val = np.exp(t2_val)
-        
+    is_up = v3 > v0
+
+    targets_log = [
+        ("0.618", v4 + (0.618 * range_13 if is_up else -0.618 * range_13), "rgba(0,240,255,0.10)"),
+        ("1.000", v4 + (1.000 * range_13 if is_up else -1.000 * range_13), "rgba(0,240,255,0.07)"),
+        ("1.618", v4 + (1.618 * range_13 if is_up else -1.618 * range_13), "rgba(0,240,255,0.04)"),
+    ]
+
     start_date = w4.end_pivot.time
     end_date = start_date + datetime.timedelta(days=60)
-    
-    # Add shaded Target Area
-    fig.add_shape(
-        type="rect",
-        x0=start_date, y0=min(t1_val, t2_val),
-        x1=end_date, y1=max(t1_val, t2_val),
-        fillcolor="rgba(0, 240, 255, 0.08)",
-        line=dict(color="rgba(0, 240, 255, 0.3)", width=1, dash="dash"),
-        name="W5 Target Zone",
-        row=1, col=1
-    )
+
+    for i in range(len(targets_log) - 1):
+        label, lo_log, fill = targets_log[i]
+        hi_log = targets_log[i + 1][1]
+        lo = np.exp(lo_log) if use_log else lo_log
+        hi = np.exp(hi_log) if use_log else hi_log
+        fig.add_shape(
+            type="rect",
+            x0=start_date, y0=min(lo, hi),
+            x1=end_date, y1=max(lo, hi),
+            fillcolor=fill,
+            line=dict(color="rgba(0, 240, 255, 0.3)", width=1, dash="dash"),
+            row=1, col=1
+        )
+        # Label the extension levels
+        fig.add_annotation(
+            x=end_date, y=max(lo, hi) if is_up else min(lo, hi),
+            text=f"W5 {targets_log[i+1][0]}",
+            showarrow=False,
+            font=dict(color="rgba(0,240,255,0.7)", size=9),
+            xanchor="left",
+            row=1, col=1
+        )
 
 def add_parallel_channel(fig: go.Figure, waves: list[WaveNode], use_log: bool):
     """Draws a parallel trendline channel based on Pivot 1, 2, 3 projected from Pivot 4."""
@@ -436,6 +465,7 @@ risk_pct = st.sidebar.slider("Risk Per Trade (%):", min_value=0.1, max_value=5.0
 
 # Execute Elliott Wave Calculation using cached function
 primary_count, alternates, engine = get_wave_analysis(df, use_log, atr_multiplier)
+df = engine.df  # Ensure computed indicators (RSI, MACD, etc.) are available in df
 
 # Check active count validity
 is_invalidated = False
@@ -466,19 +496,28 @@ else:
 
 # Build Interactive Plotly Chart
 fig = make_subplots(
-    rows=2, cols=1, 
+    rows=3, cols=1, 
     shared_xaxes=True, 
     vertical_spacing=0.03, 
-    row_heights=[0.75, 0.25]
+    row_heights=[0.60, 0.20, 0.20]
 )
 
-# Add Line Chart
+# Determine trend color for price line based on last detected wave direction
+_price_line_color = "#ffffff"
+if active_waves:
+    last_w = active_waves[-1]
+    _is_bull = last_w.end_pivot.price > last_w.start_pivot.price
+    _price_line_color = "#00F0FF" if _is_bull else "#FF4A6B"
+
+# Add Line Chart with area fill
 fig.add_trace(go.Scattergl(
     x=df['Date'],
     y=df['Close'],
     mode='lines',
     name="Price",
-    line=dict(color="#ffffff", width=1.5)
+    line=dict(color=_price_line_color, width=1.5),
+    fill='tozeroy',
+    fillcolor='rgba(0,240,255,0.04)'
 ), row=1, col=1)
 
 # Calculate full swings
@@ -522,7 +561,7 @@ elif selected_count_name != "Primary Count (Highest Score)":
     alt_idx = int(selected_count_name.split("#")[-1]) - 1
     active_waves = alternates[alt_idx]
     
-st.write(f"DEBUG: len(active_waves) = {len(active_waves)}")
+
 
 # Render Wave Nodes recursively
 for wave in active_waves:
@@ -599,6 +638,31 @@ if 'RSI' in df.columns:
                 showlegend=False
             ), row=2, col=1)
 
+# Add MACD Trace
+if 'MACD' in df.columns:
+    # MACD Line
+    fig.add_trace(go.Scattergl(
+        x=df['Date'], y=df['MACD'], 
+        name='MACD', 
+        line=dict(color='#3B82F6', width=1.5),
+        showlegend=False
+    ), row=3, col=1)
+    # Signal Line
+    fig.add_trace(go.Scattergl(
+        x=df['Date'], y=df['MACD_Signal'], 
+        name='Signal', 
+        line=dict(color='#F59E0B', width=1.2, dash='dot'),
+        showlegend=False
+    ), row=3, col=1)
+    # Histogram
+    hist_colors = ['#10B981' if val >= 0 else '#EF4444' for val in df['MACD_Hist']]
+    fig.add_trace(go.Bar(
+        x=df['Date'], y=df['MACD_Hist'], 
+        name='Histogram', 
+        marker_color=hist_colors,
+        showlegend=False
+    ), row=3, col=1)
+
 # Calculate visible Y-range for the default zoom view (last zoom_bars)
 visible_df = df.tail(zoom_bars)
 y_min = float(visible_df['Low'].min())
@@ -648,6 +712,13 @@ fig.update_layout(
         side='right',
         range=[10, 90],
         title="RSI (14)"
+    ),
+    yaxis3=dict(
+        gridcolor='rgba(255, 255, 255, 0.1)',
+        gridwidth=1,
+        griddash='dot',
+        side='right',
+        title="MACD"
     ),
     plot_bgcolor='#0F172A',
     paper_bgcolor='#0B0F19',

@@ -89,7 +89,11 @@ class DailyElliottWaveEngine:
         # Calculate ATR_14
         self.df['ATR'] = self._calculate_atr_14()
         self.df['RSI'] = self._calculate_rsi_14()
-        
+        macd_line, signal_line, histogram = self._calculate_macd()
+        self.df['MACD'] = macd_line
+        self.df['MACD_Signal'] = signal_line
+        self.df['MACD_Hist'] = histogram
+
         # Calculate adaptive Zig-Zag thresholds per bar
         self.df['min_move_pct'] = np.maximum(0.02, (self.df['ATR'] / self.df['Close']) * 1.5)
 
@@ -97,8 +101,17 @@ class DailyElliottWaveEngine:
         delta = self.df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-        rs = gain / loss
+        rs = gain / loss.replace(0, np.nan)
         return 100 - (100 / (1 + rs))
+
+    def _calculate_macd(self, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """Calculates MACD Line, Signal Line, and Histogram."""
+        ema_fast = self.df['Close'].ewm(span=fast, adjust=False).mean()
+        ema_slow = self.df['Close'].ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        histogram = macd_line - signal_line
+        return macd_line, signal_line, histogram
 
     def _calculate_atr_14(self) -> pd.Series:
         high = self.df['High']
@@ -211,15 +224,24 @@ class DailyElliottWaveEngine:
             
         return pivots
 
-    def _determine_degree_by_duration(self, duration_days: int) -> str:
-        """Assigns an Elliott Wave degree based on the duration of the entire sequence."""
-        if duration_days > 400:
+    def _determine_degree_by_duration(self, start_pivot: 'Pivot', end_pivot: 'Pivot') -> str:
+        """
+        Assigns an Elliott Wave degree based on the CALENDAR duration between two pivots.
+        Uses actual dates rather than bar indices to correctly handle non-trading days.
+        """
+        try:
+            delta = (pd.Timestamp(end_pivot.time) - pd.Timestamp(start_pivot.time)).days
+        except Exception:
+            # Fallback: estimate from bar count (assume ~252 trading days/year)
+            delta = int((end_pivot.index - start_pivot.index) * 365 / 252)
+
+        if delta > 730:      # > 2 years
             return "Cycle"
-        elif duration_days > 120:
+        elif delta > 180:    # > 6 months
             return "Primary"
-        elif duration_days > 30:
+        elif delta > 45:     # > 6 weeks
             return "Intermediate"
-        elif duration_days > 10:
+        elif delta > 14:     # > 2 weeks
             return "Minor"
         else:
             return "Minuette"
@@ -273,15 +295,22 @@ class DailyElliottWaveEngine:
                 
         if not motive_candidates:
             return self._fallback_sequential(pivots, 0, n)
-            
-        # Pick the best anchor (highest score, tie-break by price size)
-        motive_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        best_anchor = motive_candidates[0]
+
+        # Add recency bonus: reward structures that end closer to the most recent bar.
+        # This stops an old massive wave from always dominating over a fresh recent one.
+        total_bars = float(max(pivots[-1].index, 1))
+        adjusted = []
+        for score, size, i, cand, is_diag in motive_candidates:
+            recency_bonus = (cand[-1].index / total_bars) * 3.0
+            adjusted.append((score + recency_bonus, size, i, cand, is_diag))
+
+        # Pick the best anchor (highest adjusted score, tie-break by price size)
+        adjusted.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        best_anchor = adjusted[0]
         score, size, best_i, anchor_pivots, is_diag = best_anchor
-        
-        # Determine degree based on duration of this anchor
-        anchor_duration = anchor_pivots[-1].index - anchor_pivots[0].index
-        degree = self._determine_degree_by_duration(anchor_duration)
+
+        # Determine degree based on actual calendar duration of this anchor
+        degree = self._determine_degree_by_duration(anchor_pivots[0], anchor_pivots[-1])
         
         # 1. Fill preceding pivots
         if best_i > 0:
@@ -308,8 +337,7 @@ class DailyElliottWaveEngine:
             
         # Determine degree if not passed
         if not degree:
-            dur = pivots[-1].index - pivots[0].index
-            degree = self._determine_degree_by_duration(dur)
+            degree = self._determine_degree_by_duration(pivots[0], pivots[-1])
             
         i = 0
         while i < length - 1:
@@ -496,54 +524,70 @@ class DailyElliottWaveEngine:
         score = 0.0
         v = self._get_pivot_vals(pivots)
         w1, w2, w3, w4, w5 = v[1]-v[0], v[2]-v[1], v[3]-v[2], v[4]-v[3], v[5]-v[4]
-        
+
         r2 = abs(w2) / abs(w1) if abs(w1) > 0 else 0
         if 0.50 <= r2 <= 0.786:
             score += 1.0
-            
+        elif 0.382 <= r2 < 0.50:
+            score += 0.5  # shallow but acceptable
+
         r3 = abs(w3) / abs(w1) if abs(w1) > 0 else 0
-        if 1.618 <= r3 <= 2.618:
-            score += 2.0
+        if 2.0 <= r3 <= 2.618:
+            score += 4.0   # Extended third — the most powerful EW setup
+        elif 1.618 <= r3 < 2.0:
+            score += 2.0   # Classic W3 extension
         elif r3 >= 1.0:
-            score += 0.5 
-            
+            score += 0.5
+
         r4 = abs(w4) / abs(w3) if abs(w3) > 0 else 0
         if 0.236 <= r4 <= 0.382:
             score += 1.0
-            
+        elif 0.382 < r4 <= 0.50:
+            score += 0.5
+
         w13_length = abs(v[3] - v[0])
         r5 = abs(w5) / w13_length if w13_length > 0 else 0
         if 0.618 <= r5 <= 1.0:
             score += 1.0
-            
+        elif 0.382 <= r5 < 0.618:
+            score += 0.5
+
+        # Alternation bonus: W2 and W4 should alternate in character
         if (r2 > 0.50 and r4 < 0.382) or (r2 < 0.382 and r4 > 0.50):
             score += 3.0
-            
+
+        # Channel conformance: W5 should end near the upper/lower channel line
         idx1, idx2, idx3, idx5 = pivots[1].index, pivots[2].index, pivots[3].index, pivots[5].index
         t_span_13 = idx3 - idx1
         if t_span_13 > 0:
             slope = (v[3] - v[1]) / t_span_13
             proj_y = v[2] + slope * (idx5 - idx2)
             diff = abs(v[5] - proj_y) / abs(v[5]) if v[5] != 0 else 0
-            if diff <= 0.05: 
-                score += 2.0
-                
+            if diff <= 0.03:
+                score += 2.5  # Very tight channel adherence
+            elif diff <= 0.07:
+                score += 1.0
+
         # RSI Momentum & Divergence Check
-        if 'RSI' in self.df.columns and not pd.isna(self.df['RSI'].iloc[pivots[3].index]) and not pd.isna(self.df['RSI'].iloc[pivots[5].index]):
-            rsi_3 = self.df['RSI'].iloc[pivots[3].index]
-            rsi_5 = self.df['RSI'].iloc[pivots[5].index]
-            is_uptrend = v[1] > v[0]
-            if is_uptrend:
-                if v[5] > v[3] and rsi_5 < rsi_3:
-                    score += 3.0  # Divergence adds confidence
-                if rsi_3 > 70:
-                    score += 1.0  # High momentum on W3
-            else:
-                if v[5] < v[3] and rsi_5 > rsi_3:
-                    score += 3.0
-                if rsi_3 < 30:
-                    score += 1.0
-                
+        if 'RSI' in self.df.columns:
+            try:
+                rsi_3 = self.df['RSI'].iloc[pivots[3].index]
+                rsi_5 = self.df['RSI'].iloc[pivots[5].index]
+                if not pd.isna(rsi_3) and not pd.isna(rsi_5):
+                    is_uptrend = v[1] > v[0]
+                    if is_uptrend:
+                        if v[5] > v[3] and rsi_5 < rsi_3:
+                            score += 3.0  # Bearish RSI divergence on W5 = textbook exhaustion
+                        if rsi_3 > 70:
+                            score += 1.0  # High RSI momentum on W3
+                    else:
+                        if v[5] < v[3] and rsi_5 > rsi_3:
+                            score += 3.0
+                        if rsi_3 < 30:
+                            score += 1.0
+            except (IndexError, KeyError):
+                pass
+
         return score
 
     def score_diagonal(self, pivots: List[Pivot]) -> float:
