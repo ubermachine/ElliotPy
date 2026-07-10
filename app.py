@@ -857,10 +857,19 @@ with col_details:
                 # Corrective block (3 waves)
                 pivs = [last_block[0].start_pivot] + [w.end_pivot for w in last_block]
                 if len(pivs) >= 4:
-                    is_valid, checklist = engine.verify_zigzag_rules(pivs[:4])
+                    is_zz, zz_check = engine.verify_zigzag_rules(pivs[:4])
+                    is_flat, flat_check = engine.verify_flat_rules(pivs[:4])
+                    
+                    if is_flat and not is_zz:
+                        st.markdown("<p style='font-size:13px; color:#94A3B8; margin-bottom:10px;'>Validating as: <b>FLAT</b> Correction</p>", unsafe_allow_html=True)
+                        checklist = flat_check
+                    else:
+                        st.markdown("<p style='font-size:13px; color:#94A3B8; margin-bottom:10px;'>Validating as: <b>ZIGZAG</b> Correction</p>", unsafe_allow_html=True)
+                        checklist = zz_check
+                        
                     for item in checklist:
-                        icon = "✅" if item["status"] else "❌"
-                        color = "#10B981" if item["status"] else "#EF4444"
+                        icon = "✅" if item["status"] else ("⚠️" if "Guideline" in item["rule"] else "❌")
+                        color = "#10B981" if item["status"] else ("#F59E0B" if "Guideline" in item["rule"] else "#EF4444")
                         st.markdown(f"<div style='padding: 8px 12px; margin: 6px 0; background: rgba(255,255,255,0.03); border-radius: 4px; border-left: 3px solid {color}; display: flex; align-items: center;'><span style='margin-right: 10px; font-size: 16px;'>{icon}</span> <span style='font-size: 14px; font-weight: 500;'>{item['rule']}</span></div>", unsafe_allow_html=True)
                 else:
                     st.info("Insufficient pivots to perform full structural rules validation on the active wave block.")

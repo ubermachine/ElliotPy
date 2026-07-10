@@ -490,11 +490,12 @@ class DailyElliottWaveEngine:
         b_retrace_ok = v[2] > (v[0] - buffer) if is_uptrend else v[2] < (v[0] + buffer)
         checklist.append({"rule": "B Retrace < 100% of A", "status": b_retrace_ok})
         
-        # 2. C ends beyond A's end
-        c_beyond_a = v[3] > v[1] if is_uptrend else v[3] < v[1]
-        checklist.append({"rule": "C Ends Beyond A", "status": c_beyond_a})
+        # 2. C ends beyond A's end (Guideline)
+        c_beyond_a = v[3] > (v[1] - buffer) if is_uptrend else v[3] < (v[1] + buffer)
+        checklist.append({"rule": "C Ends Beyond A (Guideline)", "status": c_beyond_a})
         
-        all_passed = all(item["status"] for item in checklist)
+        # Only strict structural rules cause hard-fails
+        all_passed = b_retrace_ok
         return all_passed, checklist
 
     def verify_flat_rules(self, pivots: List[Pivot]) -> Tuple[bool, List[Dict[str, Any]]]:
