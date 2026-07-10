@@ -758,123 +758,67 @@ with col_stats:
         </div>
         """, unsafe_allow_html=True)
         
-    # Summary Engine Text Box
+    # Unified Summary & Prediction Engine Panel
     payload = engine.get_summary_engine_payload(primary_count, alternates)
     if payload and payload.get("summary"):
         summary = payload["summary"]
         p_count = summary.get("primary_count")
         
+        st.markdown(f"**Macro Degree Context:** `{summary.get('current_degree', 'Unknown')}`")
+        
         if p_count:
             trend = p_count.get("trend", "Neutral")
             conf = p_count.get("confidence_score", 0.0)
-            bias_color = "#00FF00" if "Bullish" in trend else ("#FF003C" if "Bearish" in trend else "#FFC837")
+            bias_color = "#10B981" if "Bullish" in trend else ("#EF4444" if "Bearish" in trend else "#F59E0B")
+            bg_color = "rgba(16, 185, 129, 0.05)" if "Bullish" in trend else ("rgba(239, 68, 68, 0.05)" if "Bearish" in trend else "rgba(245, 158, 11, 0.05)")
             
             st.markdown(f"""
-            <div class="metric-card" style="border-color: {bias_color};">
-                <h4 style="color: {bias_color};">⚡ Summary Engine (Primary)</h4>
-                <p><b>Scenario:</b> {p_count.get('scenario')} ({p_count.get('larger_context')})</p>
-                <p><b>Trend:</b> {trend}</p>
-                <p><b>Confidence:</b> {conf * 100:.0f}%</p>
+            <div style="background-color: {bg_color}; border-left: 4px solid {bias_color}; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+                <h4 style="color: {bias_color}; margin-top: 0; margin-bottom: 10px;">🎯 Primary Count ({(conf*100):.0f}% Prob)</h4>
+                <p style="margin: 5px 0;"><b>Scenario:</b> {p_count.get('scenario')} ({p_count.get('larger_context')})</p>
+                <p style="margin: 5px 0;"><b>Trend Bias:</b> <span style="color: {bias_color}; font-weight: 600;">{trend}</span></p>
             """, unsafe_allow_html=True)
             
-            if p_count.get("guidelines_met"):
-                st.markdown(f"<p style='font-size: 13px; color: #94A3B8;'><b>Guidelines Met:</b> {', '.join(p_count['guidelines_met'])}</p>", unsafe_allow_html=True)
-                
-            actionable = p_count.get("actionable", {})
-            if actionable:
+            recent = p_count.get("recent_waves", [])
+            if recent:
+                st.markdown("<p style='margin: 15px 0 5px 0; font-size: 13px; color: #94A3B8;'><b>Recent Wave Tiers:</b></p>", unsafe_allow_html=True)
+                tiers_html = " ".join([f"<span style='background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{w['label']}: <b style='color:#fff;'>{w['tier_price']}</b></span>" for w in recent])
+                st.markdown(f"<div style='margin-bottom: 5px;'>{tiers_html}</div>", unsafe_allow_html=True)
+
+            action = p_count.get("actionable", {})
+            if action:
                 st.markdown(f"""
-                <hr style="border-color: rgba(255,255,255,0.1);">
-                <p><b>Target Price:</b> {actionable.get('target_price', 'N/A')}</p>
-                <p><b>Invalidation:</b> {actionable.get('invalidation_level', 'N/A')}</p>
-                <p><b>Risk/Reward:</b> {actionable.get('risk_reward_ratio', 'N/A')}</p>
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-top: 12px; font-size: 14px;">
+                    <div>🎯 Target: <b style="color: #fff;">{action.get('target_price', 'N/A')}</b></div>
+                    <div>🛑 Inval: <b style="color: #fff;">{action.get('invalidation_level', 'N/A')}</b></div>
+                    <div>⚖️ R:R: <b style="color: #fff;">1:{action.get('risk_reward_ratio', 'N/A')}</b></div>
+                </div>
                 """, unsafe_allow_html=True)
                 
             st.markdown("</div>", unsafe_allow_html=True)
             
         a_count = summary.get("alternate_count")
         if a_count:
-            show_alt = st.toggle("Show Alternate Count", value=False)
-            if show_alt:
-                a_trend = a_count.get("trend", "Neutral")
-                a_conf = a_count.get("confidence_score", 0.0)
-                a_color = "#00FF00" if "Bullish" in a_trend else ("#FF003C" if "Bearish" in a_trend else "#FFC837")
-                
+            a_trend = a_count.get("trend", "Neutral")
+            a_conf = a_count.get("confidence_score", 0.0)
+            a_color = "#10B981" if "Bullish" in a_trend else ("#EF4444" if "Bearish" in a_trend else "#F59E0B")
+            a_bg_color = "rgba(16, 185, 129, 0.05)" if "Bullish" in a_trend else ("rgba(239, 68, 68, 0.05)" if "Bearish" in a_trend else "rgba(245, 158, 11, 0.05)")
+            
+            with st.expander(f"🔀 View Alternate Count ({(a_conf*100):.0f}% Prob)"):
                 st.markdown(f"""
-                <div class="metric-card" style="border-color: {a_color}; opacity: 0.85;">
-                    <h5 style="color: {a_color};">🔄 Alternate Count</h5>
-                    <p><b>Scenario:</b> {a_count.get('scenario')}</p>
-                    <p><b>Trend:</b> {a_trend}</p>
-                    <p><b>Confidence:</b> {a_conf * 100:.0f}%</p>
+                <div style="background-color: {a_bg_color}; border-left: 4px solid {a_color}; padding: 15px; border-radius: 4px; margin-top: 5px;">
+                    <p style="margin: 5px 0;"><b>Scenario:</b> {a_count.get('scenario')} ({a_count.get('larger_context')})</p>
+                    <p style="margin: 5px 0;"><b>Trend Bias:</b> <span style="color: {a_color}; font-weight: 600;">{a_trend}</span></p>
                 """, unsafe_allow_html=True)
                 
                 a_action = a_count.get("actionable", {})
                 if a_action:
                     st.markdown(f"""
-                    <hr style="border-color: rgba(255,255,255,0.1);">
-                    <p><b>Target:</b> {a_action.get('target_price', 'N/A')}</p>
-                    <p><b>Invalidation:</b> {a_action.get('invalidation_level', 'N/A')}</p>
+                    <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 10px; font-size: 14px;">
+                        <div>🎯 Target: <b style="color: #fff;">{a_action.get('target_price', 'N/A')}</b></div>
+                        <div>🛑 Inval: <b style="color: #fff;">{a_action.get('invalidation_level', 'N/A')}</b></div>
+                    </div>
                     """, unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-        
-    st.markdown("### 🧠 Prediction Engine Output")
-    payload = engine.get_summary_engine_payload(primary_count, alternates)
-    if payload and "summary" in payload:
-        summary = payload["summary"]
-        primary = summary.get("primary_count")
-        alternate = summary.get("alternate_count")
-        
-        st.markdown(f"**Macro Degree:** `{summary.get('current_degree', 'Unknown')}`")
-        
-        col_p, col_a = st.columns(2)
-        with col_p:
-            if primary:
-                trend_color = "#00FF00" if "Bullish" in primary.get("trend", "") else "#FF003C"
-                st.markdown(f"""
-                <div class='metric-card' style='border-top: 3px solid {trend_color};'>
-                    <h4 style='color: {trend_color};'>🎯 Primary Count ({(primary.get('confidence_score', 0)*100):.0f}% Prob)</h4>
-                    <p><b>Scenario:</b> {primary.get('scenario')}</p>
-                    <p><b>Context:</b> {primary.get('larger_context')}</p>
-                    <p><b>Trend:</b> <span style='color: {trend_color}; font-weight:bold;'>{primary.get('trend')}</span></p>
-                """, unsafe_allow_html=True)
-                
-                recent = primary.get("recent_waves", [])
-                if recent:
-                    st.markdown("<b>Last 4 Waves & Tier Prices:</b><br>", unsafe_allow_html=True)
-                    for w in recent:
-                        st.markdown(f"<span style='font-size:13px;'>• Wave <b>{w['label']}</b> ended at <b>{w['tier_price']}</b></span><br>", unsafe_allow_html=True)
-                
-                action = primary.get("actionable", {})
-                if action:
-                    st.markdown("<hr style='border-color: rgba(255,255,255,0.1); margin:10px 0px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<b>Target:</b> {action.get('target_price', 'N/A')}<br>", unsafe_allow_html=True)
-                    st.markdown(f"<b>Invalidation:</b> {action.get('invalidation_level', 'N/A')}<br>", unsafe_allow_html=True)
-                    st.markdown(f"<b>R:R:</b> 1:{action.get('risk_reward_ratio', 'N/A')}", unsafe_allow_html=True)
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-        with col_a:
-            if alternate:
-                trend_color = "#00FF00" if "Bullish" in alternate.get("trend", "") else "#FF003C"
-                st.markdown(f"""
-                <div class='metric-card' style='border-top: 3px solid {trend_color}; opacity: 0.85;'>
-                    <h4 style='color: {trend_color};'>🔀 Alternate Count ({(alternate.get('confidence_score', 0)*100):.0f}% Prob)</h4>
-                    <p><b>Scenario:</b> {alternate.get('scenario')}</p>
-                    <p><b>Context:</b> {alternate.get('larger_context')}</p>
-                    <p><b>Trend:</b> <span style='color: {trend_color}; font-weight:bold;'>{alternate.get('trend')}</span></p>
-                """, unsafe_allow_html=True)
-                
-                recent = alternate.get("recent_waves", [])
-                if recent:
-                    st.markdown("<b>Last 4 Waves & Tier Prices:</b><br>", unsafe_allow_html=True)
-                    for w in recent:
-                        st.markdown(f"<span style='font-size:13px;'>• Wave <b>{w['label']}</b> ended at <b>{w['tier_price']}</b></span><br>", unsafe_allow_html=True)
-                        
-                action = alternate.get("actionable", {})
-                if action:
-                    st.markdown("<hr style='border-color: rgba(255,255,255,0.1); margin:10px 0px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<b>Target:</b> {action.get('target_price', 'N/A')}<br>", unsafe_allow_html=True)
-                    st.markdown(f"<b>Invalidation:</b> {action.get('invalidation_level', 'N/A')}<br>", unsafe_allow_html=True)
-                
                 st.markdown("</div>", unsafe_allow_html=True)
 
 with col_details:
@@ -907,8 +851,8 @@ with col_details:
                 
                 for item in checklist:
                     icon = "✅" if item["status"] else ("⚠️" if "Alternation" in item["rule"] else "❌")
-                    status_text = "PASS" if item["status"] else ("LOW CONFIDENCE" if "Alternation" in item["rule"] else "FAIL (Invalid)")
-                    st.markdown(f"**{icon} {item['rule']}**  \n`Status: {status_text}`")
+                    color = "#10B981" if item["status"] else ("#F59E0B" if "Alternation" in item["rule"] else "#EF4444")
+                    st.markdown(f"<div style='padding: 8px 12px; margin: 6px 0; background: rgba(255,255,255,0.03); border-radius: 4px; border-left: 3px solid {color}; display: flex; align-items: center;'><span style='margin-right: 10px; font-size: 16px;'>{icon}</span> <span style='font-size: 14px; font-weight: 500;'>{item['rule']}</span></div>", unsafe_allow_html=True)
             else:
                 # Corrective block (3 waves)
                 pivs = [last_block[0].start_pivot] + [w.end_pivot for w in last_block]
@@ -916,8 +860,8 @@ with col_details:
                     is_valid, checklist = engine.verify_zigzag_rules(pivs[:4])
                     for item in checklist:
                         icon = "✅" if item["status"] else "❌"
-                        status_text = "PASS" if item["status"] else "FAIL"
-                        st.markdown(f"**{icon} {item['rule']}**  \n`Status: {status_text}`")
+                        color = "#10B981" if item["status"] else "#EF4444"
+                        st.markdown(f"<div style='padding: 8px 12px; margin: 6px 0; background: rgba(255,255,255,0.03); border-radius: 4px; border-left: 3px solid {color}; display: flex; align-items: center;'><span style='margin-right: 10px; font-size: 16px;'>{icon}</span> <span style='font-size: 14px; font-weight: 500;'>{item['rule']}</span></div>", unsafe_allow_html=True)
                 else:
                     st.info("Insufficient pivots to perform full structural rules validation on the active wave block.")
         else:
