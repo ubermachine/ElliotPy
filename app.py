@@ -158,6 +158,20 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
     if getattr(wave, 'is_truncated', False):
         label_text += " (Truncated)"
     
+    # Visual hierarchy: fade out lower degree noise
+    opacity = 1.0
+    if not show_confidence:
+        if wave.degree in ["Cycle", "Primary"]:
+            opacity = 1.0
+        elif wave.degree == "Intermediate":
+            opacity = 0.85
+        elif wave.degree == "Minor":
+            opacity = 0.7
+        elif wave.degree == "Minute":
+            opacity = 0.5
+        else:
+            opacity = 0.35
+            
     # Label deduplication: skip if this pivot has already been drawn at this degree
     pivot_key = (wave.end_pivot.time, wave.degree)
     if pivot_key not in _drawn:
@@ -187,6 +201,7 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
                 symbol="circle",
                 line=dict(color="#0B0F19", width=1.5)
             ),
+            opacity=opacity,
             name=f"Pivot {wave.label}",
             showlegend=False,
             hoverinfo='text',
@@ -207,6 +222,7 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
                 textposition="bottom center" if is_high else "top center",
                 textfont=dict(color=color, size=11),
                 marker=dict(color=color, size=4, symbol="square"),
+                opacity=opacity,
                 showlegend=False,
                 hoverinfo='skip'
             ), row=1, col=1)

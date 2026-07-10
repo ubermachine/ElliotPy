@@ -705,28 +705,26 @@ class DailyElliottWaveEngine:
             
         sub_waves: List[WaveNode] = []
         
-        if parent_wave.wave_type == "motive" and len(sub_pivots) >= 6:
-            slice_pivs = sub_pivots[:6]
-            is_imp, check_imp = self.verify_impulse_rules(slice_pivs)
-            if is_imp:
-                sub_waves = self._construct_waves_from_pivots(slice_pivs, child_degree)
-            else:
-                is_diag, check_diag = self.verify_diagonal_rules(slice_pivs)
-                if is_diag:
-                    sub_waves = self._construct_waves_from_pivots(slice_pivs, child_degree, is_diagonal=True)
-                    
-        if not sub_waves and len(sub_pivots) >= 4:
-            slice_pivs = sub_pivots[:4]
-            is_zz, check_zz = self.verify_zigzag_rules(slice_pivs)
-            if is_zz:
-                sub_waves = self._construct_corrective_fallback(slice_pivs, child_degree)
-            else:
-                is_fl, check_fl = self.verify_flat_rules(slice_pivs)
-                if is_fl:
+        if parent_wave.wave_type == "motive":
+            if len(sub_pivots) >= 6:
+                slice_pivs = sub_pivots[:6]
+                is_imp, check_imp = self.verify_impulse_rules(slice_pivs)
+                if is_imp:
+                    sub_waves = self._construct_waves_from_pivots(slice_pivs, child_degree)
+                else:
+                    is_diag, check_diag = self.verify_diagonal_rules(slice_pivs)
+                    if is_diag:
+                        sub_waves = self._construct_waves_from_pivots(slice_pivs, child_degree, is_diagonal=True)
+        elif parent_wave.wave_type == "corrective":
+            if len(sub_pivots) >= 4:
+                slice_pivs = sub_pivots[:4]
+                is_zz, check_zz = self.verify_zigzag_rules(slice_pivs)
+                if is_zz:
                     sub_waves = self._construct_corrective_fallback(slice_pivs, child_degree)
                 else:
-                    # Fallback structural map
-                    sub_waves = self._construct_corrective_fallback(slice_pivs, child_degree)
+                    is_fl, check_fl = self.verify_flat_rules(slice_pivs)
+                    if is_fl:
+                        sub_waves = self._construct_corrective_fallback(slice_pivs, child_degree)
 
         if sub_waves:
             consistent = True
