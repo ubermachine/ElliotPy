@@ -1072,6 +1072,14 @@ with tab_inst:
                 name="P&F Column"
             ))
             
+
+        y_min_pnf = float(inst_df['Low'].min()) * 0.95
+        y_max_pnf = float(inst_df['High'].max()) * 1.05
+        if use_log:
+            pnf_y_range = [np.log10(y_min_pnf), np.log10(y_max_pnf)]
+        else:
+            pnf_y_range = [y_min_pnf, y_max_pnf]
+            
         fig_pnf.update_layout(
             title=f"Point & Figure Base (1% Box, 3-Box Reversal) | {date_range_str}",
             plot_bgcolor='#0F172A',
@@ -1091,7 +1099,8 @@ with tab_inst:
                 gridwidth=1,
                 griddash='dot',
                 showticklabels=True,
-                side='right'
+                side='right',
+                range=pnf_y_range
             ),
             margin=dict(l=20, r=60, t=60, b=40)
         )
@@ -1149,6 +1158,14 @@ with tab_inst:
             showlegend=True
         ))
 
+
+        y_min_vp = float(inst_df['Low'].min()) * 0.95
+        y_max_vp = float(inst_df['High'].max()) * 1.05
+        if use_log:
+            vp_y_range = [np.log10(y_min_vp), np.log10(y_max_vp)]
+        else:
+            vp_y_range = [y_min_vp, y_max_vp]
+            
         fig_vp.update_layout(
             title=f"Market Profile (Visible Range Volume) | {date_range_str}",
             plot_bgcolor='#0F172A',
@@ -1169,7 +1186,8 @@ with tab_inst:
                 gridwidth=1,
                 griddash='dot',
                 showticklabels=True,
-                side='right'
+                side='right',
+                range=pnf_y_range
             ),
             legend=dict(
                 orientation="h",
