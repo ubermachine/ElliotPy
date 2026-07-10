@@ -154,3 +154,77 @@ class PointAndFigureEngine:
             columns.append({"type": current_trend, "boxes": [np.exp(b) for b in current_col]})
 
         return columns
+
+    def calculate_signals_and_targets(self, columns: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Analyzes P&F columns to detect the most recent Double Top / Bottom breakout
+        and calculates horizontal targets based on the preceding congestion base width.
+        """
+        if len(columns) < 3:
+            return {"signal": None, "target": None, "base_width": 0, "breakout_col": -1}
+            
+        signal = None
+        target = None
+        base_width = 0
+        breakout_col_idx = -1
+        
+        # We iterate backwards to find the most recent valid signal
+        for i in range(len(columns)-1, 1, -1):
+            curr = columns[i]
+            prev = columns[i-1]
+            prev2 = columns[i-2]
+            
+            # Double Top Buy Signal
+            if curr["type"] == "X" and prev2["type"] == "X":
+                if max(curr["boxes"]) > max(prev2["boxes"]):
+                    # We found a breakout. Now find base width.
+                    resistance = max(prev2["boxes"])
+                    support = min(prev["boxes"])
+                    width = 2
+                    lowest_base_price = support
+                    for j in range(i-3, -1, -1):
+                        if columns[j]["type"] == "X" and max(columns[j]["boxes"]) > resistance:
+                            break
+                        if columns[j]["type"] == "O" and min(columns[j]["boxes"]) < support:
+                            lowest_base_price = min(columns[j]["boxes"])
+                        width += 1
+                        
+                    # Aggressive Wyckoff Target: Lowest price of base + (Width * Reversal * Box Size)
+                    log_low = np.log(lowest_base_price)
+                    log_target = log_low + (width * self.reversal)
+                    
+                    signal = "Double Top Breakout (BUY)"
+                    target = np.exp(log_target)
+                    base_width = width
+                    breakout_col_idx = i
+                    break
+                    
+            # Double Bottom Sell Signal
+            elif curr["type"] == "O" and prev2["type"] == "O":
+                if min(curr["boxes"]) < min(prev2["boxes"]):
+                    support = min(prev2["boxes"])
+                    resistance = max(prev["boxes"])
+                    width = 2
+                    highest_base_price = resistance
+                    for j in range(i-3, -1, -1):
+                        if columns[j]["type"] == "O" and min(columns[j]["boxes"]) < support:
+                            break
+                        if columns[j]["type"] == "X" and max(columns[j]["boxes"]) > resistance:
+                            highest_base_price = max(columns[j]["boxes"])
+                        width += 1
+                        
+                    log_high = np.log(highest_base_price)
+                    log_target = log_high - (width * self.reversal)
+                    
+                    signal = "Double Bottom Breakdown (SELL)"
+                    target = np.exp(log_target)
+                    base_width = width
+                    breakout_col_idx = i
+                    break
+                    
+        return {
+            "signal": signal,
+            "target": target,
+            "base_width": base_width,
+            "breakout_col": breakout_col_idx
+        }

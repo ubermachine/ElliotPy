@@ -1014,14 +1014,15 @@ with tab_inst:
     
     # Filter data to strictly the last 3 months (90 days)
     last_date = df['Date'].iloc[-1]
-    three_months_ago = last_date - datetime.timedelta(days=90)
-    inst_df = df[df['Date'] >= three_months_ago].copy()
+    six_months_ago = last_date - datetime.timedelta(days=180)
+    inst_df = df[df['Date'] >= six_months_ago].copy()
     
     date_range_str = f"{inst_df['Date'].iloc[0].strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}"
 
     # Calculate Data First for Summary
     pnf_engine = PointAndFigureEngine(inst_df, box_size_pct=0.01, reversal_amount=3)
     pnf_cols = pnf_engine.calculate_pnf()
+    pnf_sig = pnf_engine.calculate_signals_and_targets(pnf_cols)
     
     vp_engine = VolumeProfileEngine(inst_df, bins=60)
     profile_data = vp_engine.calculate_profile()
@@ -1043,8 +1044,9 @@ with tab_inst:
         else:
             profile_state = f"🟡 RESPONSIVE / BALANCED (Price {last_close:,.2f} is inside the Value Area, rotating around POC {poc:,.2f})"
             
-        st.info(f"**P&F Trend Engine (Last 3 Months):** {pnf_trend}")
-        st.info(f"**Market Profile Engine (Last 3 Months):** {profile_state}")
+        signal_text = f" | ⚡ **{pnf_sig['signal']}** (Target: {pnf_sig['target']:.2f})" if pnf_sig['signal'] else ""
+        st.info(f"**P&F Trend Engine (Last 6 Months):** {pnf_trend}{signal_text}")
+        st.info(f"**Market Profile Engine (Last 6 Months):** {profile_state}")
     
     st.markdown("---")
     
@@ -1052,7 +1054,7 @@ with tab_inst:
     st.markdown("### Point & Figure (1% x 3)")
     
     if not pnf_cols:
-        st.info("Not enough data to build P&F chart for the last 3 months.")
+        st.info("Not enough data to build P&F chart for the last 6 months.")
     else:
         fig_pnf = go.Figure()
         for i, col in enumerate(pnf_cols):
@@ -1080,6 +1082,29 @@ with tab_inst:
         else:
             pnf_y_range = [y_min_pnf, y_max_pnf]
             
+
+        if pnf_sig['signal']:
+            # Draw Target Line
+            fig_pnf.add_hline(y=pnf_sig['target'], line_dash="dash", line_color="#F59E0B", line_width=2,
+                              annotation_text=f"🎯 Target: {pnf_sig['target']:.2f}",
+                              annotation_font=dict(color="#F59E0B", size=12))
+            
+            # Draw Breakout Marker
+            breakout_col = pnf_sig['breakout_col']
+            is_buy = "BUY" in pnf_sig['signal']
+            marker_y = max(pnf_cols[breakout_col]['boxes']) if is_buy else min(pnf_cols[breakout_col]['boxes'])
+            marker_color = "#10B981" if is_buy else "#EF4444"
+            marker_symbol = "triangle-up" if is_buy else "triangle-down"
+            
+            fig_pnf.add_trace(go.Scatter(
+                x=[breakout_col],
+                y=[marker_y],
+                mode="markers",
+                marker=dict(symbol=marker_symbol, color=marker_color, size=16),
+                showlegend=False,
+                hovertext=pnf_sig['signal']
+            ))
+
         fig_pnf.update_layout(
             title=f"Point & Figure Base (1% Box, 3-Box Reversal) | {date_range_str}",
             plot_bgcolor='#0F172A',
@@ -1112,7 +1137,7 @@ with tab_inst:
     st.markdown("### Market Profile (Volume TPOs)")
     
     if not profile_data:
-        st.info("Not enough data for Market Profile in the last 3 months.")
+        st.info("Not enough data for Market Profile in the last 6 months.")
     else:
         fig_vp = go.Figure()
         
