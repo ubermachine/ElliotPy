@@ -606,7 +606,7 @@ if primary_count:
             line_width=2,
             annotation_text="🎯 Primary Target",
             annotation_position="top right",
-            annotation_font=dict(color="#10B981", size=11, fontfamily="Outfit"),
+            annotation_font=dict(color="#10B981", size=11, family="Outfit"),
             row=1, col=1
         )
 
@@ -621,7 +621,7 @@ if alternates:
             line_width=2,
             annotation_text="🔀 Alternate Target",
             annotation_position="bottom right",
-            annotation_font=dict(color="#F59E0B", size=11, fontfamily="Outfit"),
+            annotation_font=dict(color="#F59E0B", size=11, family="Outfit"),
             row=1, col=1
         )
 
