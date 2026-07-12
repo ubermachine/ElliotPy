@@ -1,0 +1,3 @@
+## 2024-05-14 - Pandas .iloc Loop Bottleneck
+**Learning:** In highly mathematical loops (like the `run_adaptive_zigzag` indicator), reading rows using Pandas `.iloc` creates a massive performance penalty. In Python algorithmic trading scripts, iterating over DataFrames via `iloc` can make operations run orders of magnitude slower than native arrays.
+**Action:** Always extract Pandas series to NumPy arrays (`.values`) before executing tight loop logic (e.g. `df['Close'].values`), and access them via standard indexing to preserve O(1) read speeds. Cache these arrays on instances if they are reused.
