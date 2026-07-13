@@ -12,8 +12,14 @@ class DataManager:
 
     def _get_data_path(self, symbol: str, interval: str = "1d") -> str:
         """Determines if a local data lake exists, otherwise returns GitHub URL."""
-        symbol_sanitized = symbol.replace("^", "").replace(".", "_").lower()
-        filename = f"{symbol_sanitized}_{interval}.parquet"
+        symbol = symbol.upper().strip()
+        is_sector = symbol in [
+            "^NSEI", "^NSEBANK", "^CNXAUTO", "^CNXIT", "^CNXPHARMA", 
+            "^CNXMETAL", "^CNXENERGY", "^CNXFMCG", "^CNXMEDIA", "^CNXREALTY", 
+            "^CNXPSUBANK", "^CNXINFRA", "NIFTY_FIN_SERVICE.NS", 
+            "NIFTY_OIL_AND_GAS.NS", "^CNXCONSUM"
+        ]
+        filename = "SectorDailyBars.parquet" if is_sector else "DailyBars.parquet"
         
         # Check local paths first
         local_paths = [
@@ -33,21 +39,28 @@ class DataManager:
     def fetch_data(self, symbol: str, force_refresh: bool = False) -> tuple[pd.DataFrame, bool]:
         """
         Fetches daily OHLCV data directly from the central Parquet file.
-        Uses DuckDB to query the Parquet path (local or remote URL).
+        Uses DuckDB (local) or Pandas (remote URL) to fetch and filter by Ticker.
         """
         symbol = symbol.upper().strip()
         data_path = self._get_data_path(symbol)
         
         print(f"Streaming data for {symbol} from {data_path}...")
         
-        con = duckdb.connect()
         try:
-            # Load httpfs if reading from HTTPS URL
             if data_path.startswith("http"):
-                con.execute("INSTALL httpfs; LOAD httpfs;")
-                
-            query = f"SELECT Date, Open, High, Low, Close, Volume FROM '{data_path}' ORDER BY Date"
-            df = con.execute(query).df()
+                # Use pandas read_parquet directly for remote files (prevents DuckDB httpfs segfaults on Streamlit Cloud)
+                df_all = pd.read_parquet(data_path)
+                df = df_all[df_all['Ticker'] == symbol][['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].sort_values('Date').reset_index(drop=True)
+            else:
+                con = duckdb.connect()
+                try:
+                    query = f"SELECT Date, Open, High, Low, Close, Volume FROM read_parquet('{data_path}') WHERE Ticker = '{symbol}' ORDER BY Date"
+                    df = con.execute(query).df()
+                finally:
+                    con.close()
+            
+            if df.empty:
+                raise ValueError(f"No data returned for symbol: {symbol} inside the file")
         except Exception as e:
             print(f"Failed to load from lake: {e}. Falling back to dynamic yfinance download...")
             try:
@@ -71,8 +84,6 @@ class DataManager:
                 df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
             except Exception as yf_err:
                 raise ValueError(f"Failed to load data for '{symbol}' from data lake AND yfinance: {yf_err}")
-        finally:
-            con.close()
 
             
         # Ensure Date is datetime.date
