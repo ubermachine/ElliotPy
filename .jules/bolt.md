@@ -1,0 +1,3 @@
+## 2024-07-18 - Avoid Pandas .iloc in Tight Inner Loops
+**Learning:** Using `pandas.DataFrame.iloc` or column access on single rows within heavy loops causes massive performance bottlenecks. In our Elliot Wave engine, invoking `.iloc` inside the adaptive ZigZag loops caused the logic to consume significant time (> 30s for repeated analysis).
+**Action:** When a method needs to iterate tightly across dataframe rows, pre-fetch columns as NumPy arrays via `.values` inside the constructor or initialization phase and access these arrays by index. This bypasses pandas overhead, converting >30s execution times down to <1s.
