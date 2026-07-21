@@ -98,6 +98,16 @@ class DailyElliottWaveEngine:
         # Pure ATR sensitivity (no arbitrary % floors) prevents "big guess" waves
         self.df['min_move_pct'] = (self.df['ATR'] / self.df['Close']) * 1.2
 
+        # Pre-fetch columns as NumPy arrays for fast loop access
+        self._close_values = self.df['Close'].values
+        self._high_values = self.df['High'].values
+        self._low_values = self.df['Low'].values
+        self._log_close_values = self.df['Log_Close'].values
+        self._log_high_values = self.df['Log_High'].values
+        self._log_low_values = self.df['Log_Low'].values
+        self._date_values = self.df['Date'].values
+        self._min_move_pct_values = self.df['min_move_pct'].values
+
     def _calculate_rsi_14(self) -> pd.Series:
         delta = self.df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -172,10 +182,10 @@ class DailyElliottWaveEngine:
 
         # Run Zig-Zag loop
         for t in range(int(last_extreme_idx) + 1, end_idx + 1):
-            current_close = float(self.df['Close'].iloc[t])
-            current_high = float(self.df['High'].iloc[t])
-            current_low = float(self.df['Low'].iloc[t])
-            threshold = float(self.df['min_move_pct'].iloc[t]) * min_move_mult
+            current_close = float(self._close_values[t])
+            current_high = float(self._high_values[t])
+            current_low = float(self._low_values[t])
+            threshold = float(self._min_move_pct_values[t]) * min_move_mult
             
             if direction == 1:  # Looking for HIGH
                 if current_high > last_extreme_price:
@@ -185,10 +195,10 @@ class DailyElliottWaveEngine:
                 if current_low <= last_extreme_price * (1.0 - threshold):
                     pivots.append(Pivot(
                         index=int(last_extreme_idx),
-                        price=float(self.df['High'].iloc[last_extreme_idx]),
-                        log_price=float(self.df['Log_High'].iloc[last_extreme_idx]),
+                        price=float(self._high_values[last_extreme_idx]),
+                        log_price=float(self._log_high_values[last_extreme_idx]),
                         type_str="HIGH",
-                        time=self.df['Date'].iloc[last_extreme_idx]
+                        time=self._date_values[last_extreme_idx]
                     ))
                     direction = -1
                     last_extreme_price = current_low
@@ -202,10 +212,10 @@ class DailyElliottWaveEngine:
                 if current_high >= last_extreme_price * (1.0 + threshold):
                     pivots.append(Pivot(
                         index=int(last_extreme_idx),
-                        price=float(self.df['Low'].iloc[last_extreme_idx]),
-                        log_price=float(self.df['Log_Low'].iloc[last_extreme_idx]),
+                        price=float(self._low_values[last_extreme_idx]),
+                        log_price=float(self._log_low_values[last_extreme_idx]),
                         type_str="LOW",
-                        time=self.df['Date'].iloc[last_extreme_idx]
+                        time=self._date_values[last_extreme_idx]
                     ))
                     direction = 1
                     last_extreme_price = current_high
@@ -213,14 +223,14 @@ class DailyElliottWaveEngine:
 
         # Append last bar as a temporary pivot to anchor the current leg
         if pivots and pivots[-1].index != end_idx:
-            last_close = float(self.df['Close'].iloc[end_idx])
+            last_close = float(self._close_values[end_idx])
             last_type = "HIGH" if pivots[-1].type == "LOW" else "LOW"
             pivots.append(Pivot(
                 index=end_idx,
                 price=last_close,
-                log_price=float(self.df['Log_Close'].iloc[end_idx]),
+                log_price=float(self._log_close_values[end_idx]),
                 type_str=last_type,
-                time=self.df['Date'].iloc[end_idx]
+                time=self._date_values[end_idx]
             ))
             
         return pivots
