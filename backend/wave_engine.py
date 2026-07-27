@@ -845,7 +845,7 @@ class DailyElliottWaveEngine:
             return degree_waves
 
     def get_summary_engine_payload(self, primary_waves: List[WaveNode], alternate_waves: List[List[WaveNode]]) -> Dict[str, Any]:
-        def build_count_data(waves: List[WaveNode]):
+        def build_count_data(waves: List[WaveNode], is_alt: bool = False):
             if not waves:
                 return None
             last_block = self._find_last_wave_block(waves)
@@ -910,9 +910,11 @@ class DailyElliottWaveEngine:
             inval = rec["invalidation"]
             curr = rec["current_price"]
             
-            if target and inval:
+            if target is not None:
                 actionable["target_price"] = round(target, 2)
+            if inval is not None:
                 actionable["invalidation_level"] = round(inval, 2)
+            if target is not None and inval is not None:
                 risk = abs(curr - inval)
                 reward = abs(target - curr)
                 if risk > 0:
@@ -921,6 +923,8 @@ class DailyElliottWaveEngine:
             recent_waves = [{"label": w.label, "tier_price": round(w.end_pivot.price, 2)} for w in waves[-4:]]
                     
             res = {
+                "waves": waves,
+                "is_alternate": is_alt,
                 "scenario": scenario,
                 "larger_context": larger_context,
                 "trend": trend,
@@ -931,8 +935,8 @@ class DailyElliottWaveEngine:
             }
             return res
 
-        p_data = build_count_data(primary_waves)
-        a_data = build_count_data(alternate_waves[0] if alternate_waves else [])
+        p_data = build_count_data(primary_waves, is_alt=False)
+        a_data = build_count_data(alternate_waves[0] if alternate_waves else [], is_alt=True)
         
         # Normalize Probabilities (Max 95%)
         p_score = p_data["raw_score"] if p_data else 0.0
@@ -967,4 +971,145 @@ class DailyElliottWaveEngine:
             }
         }
         return payload
+
+    def calculate_enhanced_stats(self, primary_waves: List[WaveNode], alternate_waves: List[List[WaveNode]]) -> Dict[str, Any]:
+        """Calculates rich structural statistics: Phase, Progress %, Fib Harmony Score, ATR Context, Momentum."""
+        if not primary_waves:
+            return {
+                "phase": "Undetected",
+                "progress_pct": 0.0,
+                "fib_harmony_score": 50,
+                "harmony_rating": "Standard",
+                "atr_val": 0.0,
+                "atr_pct": 0.0,
+                "atr_context": "Normal Volatility",
+                "momentum_status": "Neutral"
+            }
+            
+        last_wave = primary_waves[-1]
+        phase = f"{last_wave.wave_type.capitalize()} Phase: Wave {last_wave.label} of {last_wave.degree}"
+        
+        # Calculate wave progress % based on price amplitude relative to starting price
+        start_p = primary_waves[0].start_pivot.price
+        curr_p = last_wave.end_pivot.price
+        total_span = abs(curr_p - start_p)
+        wave_span = abs(last_wave.end_pivot.price - last_wave.start_pivot.price)
+        progress_pct = min(100.0, round((wave_span / max(total_span, 1.0)) * 100.0, 1)) if total_span > 0 else 50.0
+
+        # Calculate Fib Harmony Score
+        scores = [w.score for w in primary_waves if w.score > 0]
+        avg_score = np.mean(scores) if scores else 5.0
+        harmony_score = min(98, max(45, int((avg_score / 12.0) * 100)))
+        if harmony_score >= 85:
+            harmony_rating = "Exceptional Harmony"
+        elif harmony_score >= 70:
+            harmony_rating = "Strong Alignment"
+        else:
+            harmony_rating = "Standard Alignment"
+
+        # Calculate Volatility & ATR Context
+        close_p = self.df['Close'].iloc[-1]
+        if 'ATR' in self.df.columns and not pd.isna(self.df['ATR'].iloc[-1]):
+            atr_val = float(self.df['ATR'].iloc[-1])
+        else:
+            # Simple ATR estimation from High - Low
+            atr_val = float((self.df['High'] - self.df['Low']).tail(14).mean())
+        
+        atr_pct = round((atr_val / max(close_p, 0.01)) * 100.0, 2)
+        if atr_pct > 3.0:
+            atr_context = "High Volatility"
+        elif atr_pct < 1.0:
+            atr_context = "Low Volatility"
+        else:
+            atr_context = "Normal Volatility"
+
+        # Calculate Momentum Status
+        momentum_status = "🟢 Bullish Momentum Confirmed" if last_wave.end_pivot.price > last_wave.start_pivot.price else "🔴 Bearish Momentum Dominant"
+        if 'RSI' in self.df.columns and not pd.isna(self.df['RSI'].iloc[-1]):
+            rsi = self.df['RSI'].iloc[-1]
+            if rsi > 70:
+                momentum_status += " (RSI Overbought)"
+            elif rsi < 30:
+                momentum_status += " (RSI Oversold)"
+
+        return {
+            "phase": phase,
+            "progress_pct": progress_pct,
+            "fib_harmony_score": harmony_score,
+            "harmony_rating": harmony_rating,
+            "atr_val": round(atr_val, 2),
+            "atr_pct": atr_pct,
+            "atr_context": atr_context,
+            "momentum_status": momentum_status
+        }
+
+    def generate_tactical_tips(self, last_block: List[WaveNode], trade_rec: Dict[str, Any]) -> Dict[str, Any]:
+        """Generates dynamic execution and pattern strategy tips based on current setup."""
+        if not last_block or not trade_rec:
+            return {
+                "entry_tip": "Wait for a confirmed pivot structure before executing entries.",
+                "stop_tip": "Always maintain strict invalidation discipline.",
+                "exit_tip": "Target Fibonacci extensions for systematic profit scaling.",
+                "pattern_rules": ["Ensure 5-wave motive and 3-wave corrective compliance."]
+            }
+            
+        last_wave = last_block[-1]
+        lbl = last_wave.label
+        target = trade_rec.get("target")
+        inval = trade_rec.get("invalidation")
+        curr = trade_rec.get("current_price", self.df['Close'].iloc[-1])
+        
+        entry_tip = f"Look for confirmation around current level ({curr:,.2f}) with daily volume expansion."
+        if target:
+            if curr < target:
+                entry_tip = f"Bullish setup: Consider entry in zone {curr:,.2f}–{curr*1.005:,.2f} targeting {target:,.2f}."
+            else:
+                entry_tip = f"Bearish retrace setup: Consider entry near {curr:,.2f} targeting {target:,.2f}."
+
+        stop_tip = "Keep invalidation tight to structural pivot bounds."
+        if inval:
+            stop_tip = f"Place hard stop loss at invalidation level {inval:,.2f}. Trail stop to breakeven once price moves 50% toward target."
+
+        exit_tip = "Scale out 50% position at primary target; hold remaining for higher degree extension."
+        if target:
+            exit_tip = f"Primary profit target set at {target:,.2f}. Lock in profits at Fib 0.618 milestone."
+
+        pattern_rules = []
+        if lbl in ["[1]", "(1)", "1", "{1}", "i"]:
+            pattern_rules = [
+                "Wave 1 Confirmation: Ensure initial impulse broke out of the prior corrective channel.",
+                "Upcoming Wave 2: Expect a deep retracement (50% to 78.6% of W1). Prepare entry orders."
+            ]
+        elif lbl in ["[2]", "(2)", "2", "{2}", "ii"]:
+            pattern_rules = [
+                "Wave 2 Entry: Premium A+ setup. Invalidation is fixed at the start of Wave 1.",
+                "Wave 3 Expectation: Wave 3 is usually the longest and most powerful. Target 1.618x W1 extension."
+            ]
+        elif lbl in ["[3]", "(3)", "3", "{3}", "iii"]:
+            pattern_rules = [
+                "Wave 3 Rule: Wave 3 can NEVER be the shortest wave among 1, 3, and 5.",
+                "Wave 4 Preparation: Wave 4 cannot overlap Wave 1 price territory. Expect shallow 23.6–38.2% retrace."
+            ]
+        elif lbl in ["[4]", "(4)", "4", "{4}", "iv"]:
+            pattern_rules = [
+                "Wave 4 Rule: Wave 4 MUST NOT enter Wave 1 price zone (Overlap Rule).",
+                "Alternation Guideline: If Wave 2 was a sharp zigzag, expect Wave 4 to be a flat/complex sideways retrace."
+            ]
+        elif lbl in ["[5]", "(5)", "5", "{5}", "v"]:
+            pattern_rules = [
+                "Wave 5 Exhaustion: Look for RSI/MACD momentum divergence between Wave 3 and Wave 5 peaks.",
+                "Macro Reversal: Prepare to take full profits as a major 3-wave correction (A-B-C) follows Wave 5."
+            ]
+        else:
+            pattern_rules = [
+                "Corrective Structure: A-B-C corrections retrace previous impulse phases.",
+                "Wave C Projection: Wave C typically equals Wave A in length ($C = A$). Watch equality target."
+            ]
+
+        return {
+            "entry_tip": entry_tip,
+            "stop_tip": stop_tip,
+            "exit_tip": exit_tip,
+            "pattern_rules": pattern_rules
+        }
 
