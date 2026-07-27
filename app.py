@@ -460,8 +460,11 @@ if primary_count:
 
 # Asset caption (shown after data is loaded)
 st.caption(f"Daily · {active_symbol} · Last: {df['Close'].iloc[-1]:,.2f}")
-
-tab_ew, tab_inst = st.tabs(["🌊 Elliott Wave Engine", "🏦 Institutional Flow & Profile"])
+tab_ew, tab_inst, tab_tips = st.tabs([
+    "🌊 Elliott Wave Engine", 
+    "🏦 Institutional Flow & Profile",
+    "💡 Recommendations & Strategy Tips"
+])
 
 with tab_ew:
     # Compute summary engine payload first so prediction engine & chart are 100% synchronized (DRY)
@@ -1023,3 +1026,62 @@ with tab_inst:
     
     # Calculate Data First for Summary
     
+
+with tab_tips:
+    st.markdown("## 💡 Recommendations & Strategy Tips")
+    st.markdown("Comprehensive trade execution roadmap, Fibonacci price ladders, and Elliott Wave pattern strategy guides.")
+
+    curr_p = float(df['Close'].iloc[-1])
+    last_block_tips = find_last_wave_block(active_waves)
+    rec_tips = engine.get_trade_recommendation(last_block_tips)
+    tactical_tips_tab = engine.generate_tactical_tips(last_block_tips, rec_tips)
+
+    st.markdown("---")
+    col_ladder, col_cheat = st.columns([1, 1])
+
+    with col_ladder:
+        st.markdown("### 🏁 Fibonacci Milestone Price Ladder")
+        st.markdown("Key Fibonacci ratio milestones projected from current wave anchors:")
+
+        if rec_tips.get("target"):
+            tg = rec_tips["target"]
+            diff = abs(tg - curr_p)
+            is_up = tg > curr_p
+            
+            ladder_data = [
+                {"Ratio": "0.382", "Price": f"{curr_p + (0.382*diff if is_up else -0.382*diff):,.2f}", "Reaction": "Initial Target Zone", "Action": "Scale out 25% or trail stop"},
+                {"Ratio": "0.500", "Price": f"{curr_p + (0.500*diff if is_up else -0.500*diff):,.2f}", "Reaction": "Equilibrium Point", "Action": "Move stop loss to breakeven"},
+                {"Ratio": "0.618", "Price": f"{curr_p + (0.618*diff if is_up else -0.618*diff):,.2f}", "Reaction": "Golden Ratio Target", "Action": "Lock in 50% profit"},
+                {"Ratio": "1.000", "Price": f"{tg:,.2f}", "Reaction": "Primary Projection", "Action": "Lock in 75% profit"},
+                {"Ratio": "1.618", "Price": f"{curr_p + (1.618*diff if is_up else -1.618*diff):,.2f}", "Reaction": "Extended Thrust Zone", "Action": "Full exit or tight trailing stop"}
+            ]
+            st.dataframe(pd.DataFrame(ladder_data), hide_index=True, use_container_width=True)
+        else:
+            st.info("Fibonacci Milestone Ladder is available when a directional target is active.")
+
+        st.markdown("### 🛡️ Risk Management Checklist")
+        st.markdown("""
+        1. **Never Move Stop Against Position**: An invalidation level represents structural breakdown. If price breaches it, exit immediately.
+        2. **Position Sizing via ATR**: Keep risk fixed at 1–2% of account equity by adjusting position size to current ATR.
+        3. **Minimum R:R Threshold**: Only take trade setups with a projected Risk/Reward ratio of at least `1 : 1.5`.
+        4. **Scale Out at Milestones**: Lock in profits incrementally at Fib 0.382 and 0.618 levels to protect capital.
+        """)
+
+    with col_cheat:
+        st.markdown("### 📚 Pattern Strategy Masterclass")
+        last_lbl = last_block_tips[-1].label if last_block_tips else "N/A"
+        st.markdown(f"**Active Wave Pattern:** `{last_lbl}`")
+
+        for rule in tactical_tips_tab["pattern_rules"]:
+            st.markdown(f"""
+            <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3B82F6; padding: 10px 14px; border-radius: 4px; margin-bottom: 8px; font-size: 13px;">
+                💡 {rule}
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("#### 🌊 Elliott Wave Cardinal Rules (Immutable Laws)")
+        st.markdown("""
+        - **Law 1**: Wave 2 can NEVER retrace more than 100% of Wave 1.
+        - **Law 2**: Wave 3 can NEVER be the shortest wave among Waves 1, 3, and 5.
+        - **Law 3**: Wave 4 can NEVER overlap into the price territory of Wave 1 (in impulse motive waves).
+        """)
