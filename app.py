@@ -92,65 +92,44 @@ st.markdown("""
 _drawn_pivots: set = set()
 
 # Helper function to recursively draw waves
-def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth: int, show_confidence: bool, _drawn: set = None):
+def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth: int, _drawn: set = None):
     if _drawn is None:
         _drawn = set()
     degree_map = {'Cycle': 1, 'Primary': 2, 'Intermediate': 3, 'Minor': 4, 'Minuette': 5}
     if degree_map.get(wave.degree, 6) > degree_depth:
         return
     # Styling map for degrees
-    if show_confidence:
-        if wave.score >= 8.0:
-            color = "#00FF00"  # High
-        elif wave.score >= 5.0:
-            color = "#FFC837"  # Med
-        else:
-            color = "#FF003C"  # Low
-        width = 2.0
+    if wave.degree == "Cycle":
+        color = "#FF4A6B"
+        width = 3.5
         dash = 'solid'
+    elif wave.degree == "Primary":
+        color = "#00F0FF"
+        width = 3.0
+        dash = 'solid'
+    elif wave.degree == "Intermediate":
+        color = "#FFC837"
+        width = 2.0
+        dash = 'dash'
+    elif wave.degree == "Minor":
+        color = "#A0AEC0"
+        width = 2.0
+        dash = 'dot'
+    elif wave.degree == "Minute":
+        color = "#F472B6"
+        width = 1.5
+        dash = 'dashdot'
+    elif wave.degree == "Minuette":
+        color = "#9CA3AF"
+        width = 1.0
+        dash = 'longdash'
     else:
-        if wave.degree == "Cycle":
-            color = "#FF4A6B"
-            width = 3.5
-            dash = 'solid'
-        elif wave.degree == "Primary":
-            color = "#00F0FF"
-            width = 3.0
-            dash = 'solid'
-        elif wave.degree == "Intermediate":
-            color = "#FFC837"
-            width = 2.0
-            dash = 'dash'
-        elif wave.degree == "Minor":
-            color = "#A0AEC0"
-            width = 2.0
-            dash = 'dot'
-        elif wave.degree == "Minute":
-            color = "#F472B6"
-            width = 1.5
-            dash = 'dashdot'
-        elif wave.degree == "Minuette":
-            color = "#9CA3AF"
-            width = 1.0
-            dash = 'longdash'
-        else:
-            color = "#E2E8F0"
-            width = 1.0
-            dash = 'longdashdot'
+        color = "#E2E8F0"
+        width = 1.0
+        dash = 'longdashdot'
         
     x_coords = [wave.start_pivot.time, wave.end_pivot.time]
     y_coords = [wave.start_pivot.price, wave.end_pivot.price]
-    
-    # Draw segment (Wave Line) - Hiden as requested
-    # fig.add_trace(go.Scattergl(
-    #     x=x_coords,
-    #     y=y_coords,
-    #     mode='lines',
-    #     line=dict(color=color, width=width, dash=dash),
-    #     name=f"{wave.degree} {wave.label}",
-    #     showlegend=False,
-    #     hoverinfo='skip'
-    # ), row=1, col=1)
     
     # Draw end pivot marker and text label
     is_high = wave.end_pivot.type == "HIGH"
@@ -159,18 +138,16 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
         label_text += " (Truncated)"
     
     # Visual hierarchy: fade out lower degree noise
-    opacity = 1.0
-    if not show_confidence:
-        if wave.degree in ["Cycle", "Primary"]:
-            opacity = 1.0
-        elif wave.degree == "Intermediate":
-            opacity = 0.85
-        elif wave.degree == "Minor":
-            opacity = 0.7
-        elif wave.degree == "Minute":
-            opacity = 0.5
-        else:
-            opacity = 0.35
+    if wave.degree in ["Cycle", "Primary"]:
+        opacity = 1.0
+    elif wave.degree == "Intermediate":
+        opacity = 0.85
+    elif wave.degree == "Minor":
+        opacity = 0.7
+    elif wave.degree == "Minute":
+        opacity = 0.5
+    else:
+        opacity = 0.35
             
     # Label deduplication: skip if this pivot has already been drawn at this degree
     pivot_key = (wave.end_pivot.time, wave.degree)
@@ -191,7 +168,7 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
             textposition="top center" if is_high else "bottom center",
             textfont=dict(
                 color="#FFFFFF" if wave.degree in ["Cycle", "Primary"] else color,
-                size=14 if wave.degree in ["Cycle", "Primary"] else 12,
+                size=15 if wave.degree in ["Cycle", "Primary"] else 12,
                 family="'Inter', sans-serif",
                 weight="bold"
             ),
@@ -229,7 +206,7 @@ def add_wave_traces(fig: go.Figure, wave: WaveNode, use_log: bool, degree_depth:
 
     # Recurse children sub-waves
     for sw in wave.sub_waves:
-        add_wave_traces(fig, sw, use_log, degree_depth, show_confidence, _drawn)
+        add_wave_traces(fig, sw, use_log, degree_depth, _drawn)
 
 def find_last_motive_sequence(waves: list[WaveNode]) -> list[WaveNode]:
     """Finds the most recent 5-wave motive sequence in a list of waves."""
@@ -266,8 +243,8 @@ def find_last_wave_block(waves: list[WaveNode]) -> list[WaveNode]:
             return degree_waves[-3:]
         return degree_waves
 
-def add_w5_projection(fig: go.Figure, waves: list, use_log: bool):
-    """Draws W5 expectation zones using three Fib projections from W4 end."""
+def add_w5_projection(fig: go.Figure, waves: list, use_log: bool, unified_target: float = None):
+    """Draws W5 expectation zone. When unified_target is provided, centers zone on it (DRY)."""
     if len(waves) < 4:
         return
     w1, w2, w3, w4 = waves[0], waves[1], waves[2], waves[3]
@@ -279,11 +256,21 @@ def add_w5_projection(fig: go.Figure, waves: list, use_log: bool):
     range_13 = abs(v3 - v0)
     is_up = v3 > v0
 
-    targets_log = [
-        ("0.618", v4 + (0.618 * range_13 if is_up else -0.618 * range_13), "rgba(0,240,255,0.10)"),
-        ("1.000", v4 + (1.000 * range_13 if is_up else -1.000 * range_13), "rgba(0,240,255,0.07)"),
-        ("1.618", v4 + (1.618 * range_13 if is_up else -1.618 * range_13), "rgba(0,240,255,0.04)"),
-    ]
+    if unified_target is not None:
+        # Center zone on the unified target from get_trade_recommendation (DRY)
+        t_val = np.log(unified_target) if use_log else unified_target
+        band = 0.15 * range_13
+        targets_log = [
+            ("Lower", t_val - band, "rgba(0,240,255,0.10)"),
+            ("Target", t_val, "rgba(0,240,255,0.07)"),
+            ("Upper", t_val + band, "rgba(0,240,255,0.04)"),
+        ]
+    else:
+        targets_log = [
+            ("0.618", v4 + (0.618 * range_13 if is_up else -0.618 * range_13), "rgba(0,240,255,0.10)"),
+            ("1.000", v4 + (1.000 * range_13 if is_up else -1.000 * range_13), "rgba(0,240,255,0.07)"),
+            ("1.618", v4 + (1.618 * range_13 if is_up else -1.618 * range_13), "rgba(0,240,255,0.04)"),
+        ]
 
     start_date = w4.end_pivot.time
     end_date = start_date + datetime.timedelta(days=60)
@@ -301,7 +288,6 @@ def add_w5_projection(fig: go.Figure, waves: list, use_log: bool):
             line=dict(color="rgba(0, 240, 255, 0.3)", width=1, dash="dash"),
             row=1, col=1
         )
-        # Label the extension levels
         fig.add_annotation(
             x=end_date, y=max(lo, hi) if is_up else min(lo, hi),
             text=f"W5 {targets_log[i+1][0]}",
@@ -377,7 +363,6 @@ def add_parallel_channel(fig: go.Figure, waves: list[WaveNode], use_log: bool):
 
 # App Header Setup
 st.title("🌊 Elliott Wave Charting Engine")
-st.subheader("Daily Timeframe Volatility-Adaptive Structural Analyzer")
 
 # Sidebar Configuration
 st.sidebar.header("📊 Controls & Inputs")
@@ -416,49 +401,19 @@ def get_wave_analysis(df: pd.DataFrame, use_log: bool, atr_multiplier: float):
     primary_count, alternates = engine.run_analysis(min_move_mult=atr_multiplier)
     return primary_count, alternates, engine
 
-def get_pivots(df: pd.DataFrame, use_log: bool, atr_multiplier: float):
-    engine = DailyElliottWaveEngine(df, use_log_scale=use_log)
-    pivots_t1 = engine.run_adaptive_zigzag(atr_multiplier)
-    pivots_t2 = engine.run_adaptive_zigzag(atr_multiplier * 0.5)
-    return pivots_t1, pivots_t2
+# get_pivots removed (YAGNI: swing overlay controls removed)
 
-# Check for Incremental Resync or GitHub Push trigger in sidebar
-sync_clicked = st.sidebar.button("🔄 Incremental Resync", help="Downloads and appends new daily bars since the last cached date.")
-push_clicked = st.sidebar.button("📤 Push to GitHub", help="Pushes the current cached database to GitHub.")
+# Data fetch — Resync or Cache
+sync_clicked = st.sidebar.button("🔄 Refresh Data", help="Downloads and appends new daily bars since the last cached date.")
 
 if sync_clicked:
-    st.cache_data.clear()  # Clear cache to force reload
+    st.cache_data.clear()
     try:
         df, auto_log = get_incremental_sync(active_symbol)
         st.sidebar.success("Data synced successfully!")
     except Exception as e:
         st.sidebar.error(f"Sync error: {e}")
         df, auto_log = get_historical_data(active_symbol)
-elif push_clicked:
-    df, auto_log = get_historical_data(active_symbol)
-    if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
-        st.sidebar.warning("GitHub Sync skipped: Missing GITHUB_TOKEN or GITHUB_REPO in Streamlit secrets.")
-    else:
-        st.sidebar.info("Pushing to GitHub...")
-        try:
-            token = st.secrets["GITHUB_TOKEN"]
-            repo = st.secrets["GITHUB_REPO"]
-            subprocess.run(["git", "config", "--global", "user.email", "bot@elliotpy.local"], check=False)
-            subprocess.run(["git", "config", "--global", "user.name", "ElliotPy Bot"], check=False)
-            subprocess.run(["git", "add", "data_cache.db", "data/*.parquet"], check=True)
-            
-            res = subprocess.run(["git", "commit", "-m", f"Auto-sync {active_symbol} data"], capture_output=True, text=True)
-            if "nothing to commit" in res.stdout:
-                st.sidebar.info("No new data to push.")
-            else:
-                remote_url = f"https://x-access-token:{token}@github.com/{repo}.git"
-                subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
-                subprocess.run(["git", "push", "origin", "main"], check=True)
-                st.sidebar.success("Successfully pushed database to GitHub!")
-        except subprocess.CalledProcessError as e:
-            st.sidebar.error(f"GitHub Sync Failed: {e.stderr or e.output}")
-        except Exception as e:
-            st.sidebar.error(f"Push error: {e}")
 else:
     df, auto_log = get_historical_data(active_symbol)
 
@@ -470,19 +425,11 @@ use_log = st.sidebar.toggle("Use Logarithmic Scale", value=auto_log)
 st.sidebar.markdown("---")
 st.sidebar.subheader("👁️ Display Options")
 degree_depth = st.sidebar.slider("Degree Depth (1-5):", min_value=1, max_value=5, value=3, help="1=Cycle/Primary only, 5=All sub-waves")
-show_confidence = st.sidebar.toggle("Confidence Heatmap", value=False, help="Color code waves based on rule confidence score")
-show_major_swings = st.sidebar.checkbox("Show Major Swings (T1)", value=False)
-show_minor_swings = st.sidebar.checkbox("Show Minor Swings (T2)", value=False)
 zoom_bars = st.sidebar.slider(
     "Default Visible Daily Bars (Zoom):",
     min_value=100, max_value=min(1250, len(df)), value=min(500, len(df)), step=50,
     help="Restricts the default visible range of the chart to show the most recent days. Pan or drag to scroll back in time."
 )
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("💰 Risk & Position Sizing")
-account_equity = st.sidebar.number_input("Account Equity ($):", min_value=1000, value=100000, step=1000)
-risk_pct = st.sidebar.slider("Risk Per Trade (%):", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
 
 
 # Execute Elliott Wave Calculation using cached function
@@ -511,64 +458,38 @@ if primary_count:
         elif not is_uptrend and last_close >= invalidation_price:
             is_invalidated = True
 
+# Asset caption (shown after data is loaded)
+st.caption(f"Daily · {active_symbol} · Last: {df['Close'].iloc[-1]:,.2f}")
+
 tab_ew, tab_inst = st.tabs(["🌊 Elliott Wave Engine", "🏦 Institutional Flow & Profile"])
 
 with tab_ew:
+    # Compute summary engine payload first so prediction engine & chart are 100% synchronized (DRY)
+    payload = engine.get_summary_engine_payload(primary_count, alternates)
+    summary = payload.get("summary", {}) if payload else {}
+    p_count = summary.get("primary_count")
+
+    # Select active waves (highest-scoring or alternate fallback if primary is invalidated)
+    is_alt = False
+    if is_invalidated and alternates:
+        st.warning("⚠️ Primary count invalidated — showing Alternate Count #1.")
+        active_waves = alternates[0]
+        is_alt = True
+    elif p_count and p_count.get("is_alternate") and alternates:
+        active_waves = alternates[0]
+        is_alt = True
+    elif p_count and "waves" in p_count:
+        active_waves = p_count["waves"]
+    else:
+        active_waves = primary_count
+
     if is_invalidated:
         st.error(f"🚨 PRIMARY COUNT INVALIDATED: Latest close ({df['Close'].iloc[-1]:,.2f}) breached the invalidation level ({invalidation_price:,.2f})!")
     else:
         st.success(f"📈 {invalidation_msg} | Current Price: {df['Close'].iloc[-1]:,.2f}")
 
-    # Build Interactive Plotly Chart
-    fig = make_subplots(
-        rows=3, cols=1, 
-        shared_xaxes=True, 
-        vertical_spacing=0.03, 
-        row_heights=[0.60, 0.20, 0.20]
-    )
-
-
-
-    # Calculate full swings
-    pivots_t1, pivots_t2 = get_pivots(df, use_log, atr_multiplier)
-
-    # Overlay Minor Swings (T2)
-    if show_minor_swings:
-        fig.add_trace(go.Scattergl(
-            x=[p.time for p in pivots_t2],
-            y=[p.price for p in pivots_t2],
-            mode='lines',
-            line=dict(color='rgba(251, 191, 36, 0.25)', width=1, dash='dash'),
-            name='Minor Swings (T2)',
-            showlegend=True
-        ), row=1, col=1)
-    
-    # Overlay Major Swings (T1)
-    if show_major_swings:
-        fig.add_trace(go.Scattergl(
-            x=[p.time for p in pivots_t1],
-            y=[p.price for p in pivots_t1],
-            mode='lines+markers',
-            line=dict(color='rgba(156, 163, 175, 0.4)', width=1.5),
-            marker=dict(color='rgba(156, 163, 175, 0.6)', size=4),
-            name='Major Swings (T1)',
-            showlegend=True
-        ), row=1, col=1)
-
-    # Display Selection for Counts
-    count_options = ["Primary Count (Highest Score)"]
-    for i, alt in enumerate(alternates):
-        count_options.append(f"Alternate Count #{i+1}")
-    
-    selected_count_name = st.radio("Select Count to Overlay:", count_options, horizontal=True)
-
-    active_waves = primary_count
-    if selected_count_name == "Primary Count (Highest Score)" and is_invalidated and alternates:
-        st.warning("⚠️ Automatically falling back to Alternate Count #1 due to Primary Count invalidation.")
-        active_waves = alternates[0]
-    elif selected_count_name != "Primary Count (Highest Score)":
-        alt_idx = int(selected_count_name.split("#")[-1]) - 1
-        active_waves = alternates[alt_idx]
+    # Build Interactive Plotly Chart — single panel (YAGNI: RSI/MACD removed)
+    fig = make_subplots(rows=1, cols=1)
 
     # Determine trend color for price line based on last detected wave direction
     _price_line_color = "#ffffff"
@@ -587,125 +508,56 @@ with tab_ew:
         fill='tozeroy',
         fillcolor='rgba(0,240,255,0.04)'
     ), row=1, col=1)
-    
 
+    # === UNIFIED PREDICTION SOURCE (DRY: single trade_rec for chart + card) ===
+    last_block = find_last_wave_block(active_waves)
+    trade_rec = engine.get_trade_recommendation(last_block)
 
     # Render Wave Nodes recursively
     for wave in active_waves:
-        add_wave_traces(fig, wave, use_log, degree_depth, show_confidence)
+        add_wave_traces(fig, wave, use_log, degree_depth)
     
-    # Project parallel channels and Wave 5 targets for the most recent impulse sequence found
+    # Project parallel channels and Wave 5 target zone (centered on unified target)
     recent_motive_seq = find_last_motive_sequence(active_waves)
     if recent_motive_seq:
-        add_w5_projection(fig, recent_motive_seq, use_log)
+        add_w5_projection(fig, recent_motive_seq, use_log, unified_target=trade_rec["target"])
         add_parallel_channel(fig, recent_motive_seq, use_log)
     
-    # Add Invalidation Level Trace
-    if invalidation_price is not None:
+    # Invalidation hline — from unified trade_rec
+    if trade_rec["invalidation"] is not None:
         fig.add_hline(
-            y=invalidation_price,
+            y=trade_rec["invalidation"],
             line_color="#FF003C",
             line_dash="dash",
             line_width=1.5,
-            annotation_text="Invalidation Line",
+            annotation_text="Invalidation",
             annotation_position="bottom right",
             annotation_font=dict(color="#FF003C", size=10),
             row=1, col=1
         )
 
-    # Plot Targets for both Primary and Alternate Scenarios
-    if primary_count:
-        last_block = find_last_wave_block(primary_count)
-        rec = engine.get_trade_recommendation(last_block)
-        if rec["target"] is not None:
-            fig.add_hline(
-                y=rec["target"],
-                line_color="#10B981",
-                line_dash="dot",
-                line_width=2,
-                annotation_text="🎯 Primary Target",
-                annotation_position="top right",
-                annotation_font=dict(color="#10B981", size=11, family="Outfit"),
-                row=1, col=1
-            )
-            # Dummy trace for legend
-            fig.add_trace(go.Scattergl(
-                x=[None], y=[None], mode='lines',
-                line=dict(color="#10B981", dash="dot", width=2),
-                name="🎯 Primary Target",
-                showlegend=True
-            ), row=1, col=1)
-
-    if alternates:
-        last_block_alt = find_last_wave_block(alternates[0])
-        rec_alt = engine.get_trade_recommendation(last_block_alt)
-        if rec_alt["target"] is not None and rec_alt["target"] != rec.get("target"):
-            fig.add_hline(
-                y=rec_alt["target"],
-                line_color="#F59E0B",
-                line_dash="dot",
-                line_width=2,
-                annotation_text="🔀 Alternate Target",
-                annotation_position="bottom right",
-                annotation_font=dict(color="#F59E0B", size=11, family="Outfit"),
-                row=1, col=1
-            )
-            # Dummy trace for legend
-            fig.add_trace(go.Scattergl(
-                x=[None], y=[None], mode='lines',
-                line=dict(color="#F59E0B", dash="dot", width=2),
-                name="🔀 Alternate Target",
-                showlegend=True
-            ), row=1, col=1)
+    # Target hline — from unified trade_rec (SAME value shown in prediction card)
+    if trade_rec["target"] is not None:
+        fig.add_hline(
+            y=trade_rec["target"],
+            line_color="#10B981",
+            line_dash="dot",
+            line_width=2,
+            annotation_text=f"🎯 Target: {trade_rec['target']:,.2f}",
+            annotation_position="top right",
+            annotation_font=dict(color="#10B981", size=11, family="Outfit"),
+            row=1, col=1
+        )
+        # Dummy trace for legend
+        fig.add_trace(go.Scattergl(
+            x=[None], y=[None], mode='lines',
+            line=dict(color="#10B981", dash="dot", width=2),
+            name="🎯 Target",
+            showlegend=True
+        ), row=1, col=1)
 
     
-    # Add RSI Trace
-    if 'RSI' in df.columns:
-        fig.add_trace(go.Scattergl(
-            x=df['Date'], y=df['RSI'], 
-            name='RSI (14)', 
-            line=dict(color='#00F0FF', width=1.5),
-            showlegend=False
-        ), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=2, col=1)
-    
-        # Check for divergence to highlight
-        if recent_motive_seq and len(recent_motive_seq) >= 5:
-            w3 = recent_motive_seq[2]
-            w5 = recent_motive_seq[4]
-            if not pd.isna(df['RSI'].iloc[w3.end_pivot.index]) and not pd.isna(df['RSI'].iloc[w5.end_pivot.index]):
-                fig.add_trace(go.Scattergl(
-                    x=[w3.end_pivot.time, w5.end_pivot.time],
-                    y=[df['RSI'].iloc[w3.end_pivot.index], df['RSI'].iloc[w5.end_pivot.index]],
-                    mode='lines', line=dict(color='yellow', width=2, dash='dot'),
-                    showlegend=False
-                ), row=2, col=1)
-
-    # Add MACD Trace
-    if 'MACD' in df.columns:
-        # MACD Line
-        fig.add_trace(go.Scattergl(
-            x=df['Date'], y=df['MACD'], 
-            name='MACD', 
-            line=dict(color='#3B82F6', width=1.5),
-            showlegend=False
-        ), row=3, col=1)
-        # Signal Line
-        fig.add_trace(go.Scattergl(
-            x=df['Date'], y=df['MACD_Signal'], 
-            name='Signal', 
-            line=dict(color='#F59E0B', width=1.2, dash='dot'),
-            showlegend=False
-        ), row=3, col=1)
-        # Histogram
-        hist_colors = ['#10B981' if val >= 0 else '#EF4444' for val in df['MACD_Hist']]
-        fig.add_trace(go.Bar(
-            x=df['Date'], y=df['MACD_Hist'], 
-            name='Histogram', 
-            marker_color=hist_colors,
-            showlegend=False
-        ), row=3, col=1)
+    # RSI & MACD subplots removed (YAGNI: not connected to prediction logic)
 
     # Calculate visible Y-range for the default zoom view (last zoom_bars)
     visible_df = df.tail(zoom_bars)
@@ -724,9 +576,9 @@ with tab_ew:
     else:
         y_range = [y_min_padded, y_max_padded]
 
-    # Layout Config
+    # Layout Config — single panel, no RSI/MACD axes
     fig.update_layout(
-        height=850,
+        height=700,
         margin=dict(l=20, r=20, t=20, b=20),
         xaxis=dict(
             gridcolor='rgba(255, 255, 255, 0.1)',
@@ -749,21 +601,6 @@ with tab_ew:
             showline=False,
             zeroline=False
         ),
-        yaxis2=dict(
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            gridwidth=1,
-            griddash='dot',
-            side='right',
-            range=[10, 90],
-            title="RSI (14)"
-        ),
-        yaxis3=dict(
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            gridwidth=1,
-            griddash='dot',
-            side='right',
-            title="MACD"
-        ),
         plot_bgcolor='#0F172A',
         paper_bgcolor='#0B0F19',
         hovermode='x unified',
@@ -783,7 +620,6 @@ with tab_ew:
     
         # Active Count Description Card
         if active_waves:
-            is_alt = selected_count_name != "Primary Count (Highest Score)"
             title = "Alternate Count" if is_alt else "Primary Wave Structure"
             st.markdown(f"""
             <div class="metric-card">
@@ -794,89 +630,53 @@ with tab_ew:
             </div>
             """, unsafe_allow_html=True)
         
-        # Unified Summary & Prediction Engine Panel
-        payload = engine.get_summary_engine_payload(primary_count, alternates)
-        if payload and payload.get("summary"):
-            summary = payload["summary"]
-            p_count = summary.get("primary_count")
-        
-            st.markdown(f"**Macro Degree Context:** `{summary.get('current_degree', 'Unknown')}`")
-        
-            if p_count:
-                trend = p_count.get("trend", "Neutral")
-                conf = p_count.get("confidence_score", 0.0)
-                bias_color = "#10B981" if "Bullish" in trend else ("#EF4444" if "Bearish" in trend else "#F59E0B")
-                bg_color = "rgba(16, 185, 129, 0.05)" if "Bullish" in trend else ("rgba(239, 68, 68, 0.05)" if "Bearish" in trend else "rgba(245, 158, 11, 0.05)")
-            
-                st.markdown(f"""
-                <div style="background-color: {bg_color}; border-left: 4px solid {bias_color}; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h4 style="color: {bias_color}; margin: 0;">🎯 Primary Count</h4>
-                        <span style="color: {bias_color}; font-weight: bold; font-size: 14px;">{(conf*100):.0f}% Prob</span>
-                    </div>
-                    <p style="margin: 5px 0;"><b>Scenario:</b> {p_count.get('scenario')} ({p_count.get('larger_context')})</p>
-                    <p style="margin: 5px 0; margin-bottom: 10px;"><b>Trend Bias:</b> <span style="color: {bias_color}; font-weight: 600;">{trend}</span></p>
-                """, unsafe_allow_html=True)
-            
-                st.progress(conf)
-            
-                guidelines = p_count.get("guidelines_met", [])
-                if guidelines:
-                    gl_html = " ".join([f"<span style='background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60A5FA; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{g}</span>" for g in guidelines])
-                    st.markdown(f"<div style='margin: 10px 0;'>{gl_html}</div>", unsafe_allow_html=True)
-            
-                recent = p_count.get("recent_waves", [])
-                if recent:
-                    st.markdown("<p style='margin: 15px 0 5px 0; font-size: 13px; color: #94A3B8;'><b>Recent Wave Tiers:</b></p>", unsafe_allow_html=True)
-                    tiers_html = " ".join([f"<span style='background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{w['label']}: <b style='color:#fff;'>{w['tier_price']}</b></span>" for w in recent])
-                    st.markdown(f"<div style='margin-bottom: 5px;'>{tiers_html}</div>", unsafe_allow_html=True)
+        # Enhanced Wave Statistics Panel
+        stats = engine.calculate_enhanced_stats(active_waves, alternates)
+        st.markdown("#### 📈 Enhanced Wave Statistics")
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="color: #94A3B8;">Phase</span>
+                <span style="font-weight: 600; color: #E2E8F0;">{stats.get('phase', 'N/A')}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="color: #94A3B8;">Progress</span>
+                <span style="font-weight: 600; color: #E2E8F0;">{stats.get('progress_pct', 0.0)}%</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="color: #94A3B8;">Fib Harmony</span>
+                <span style="font-weight: 600; color: #E2E8F0;">{stats.get('fib_harmony_score', 0)} ({stats.get('harmony_rating', '')})</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="color: #94A3B8;">ATR Context ({stats.get('atr_pct', 0.0)}%)</span>
+                <span style="font-weight: 600; color: #E2E8F0;">{stats.get('atr_context', '')}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: #94A3B8;">Momentum</span>
+                <span style="font-weight: 600; color: #E2E8F0;">{stats.get('momentum_status', '')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-                action = p_count.get("actionable", {})
-                if action:
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-top: 12px; font-size: 14px;">
-                        <div>🎯 Target: <b style="color: #fff;">{action.get('target_price', 'N/A')}</b></div>
-                        <div>🛑 Inval: <b style="color: #fff;">{action.get('invalidation_level', 'N/A')}</b></div>
-                        <div>⚖️ R:R: <b style="color: #fff;">1:{action.get('risk_reward_ratio', 'N/A')}</b></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            a_count = summary.get("alternate_count")
-            if a_count:
-                a_trend = a_count.get("trend", "Neutral")
-                a_conf = a_count.get("confidence_score", 0.0)
-                a_color = "#10B981" if "Bullish" in a_trend else ("#EF4444" if "Bearish" in a_trend else "#F59E0B")
-                a_bg_color = "rgba(16, 185, 129, 0.05)" if "Bullish" in a_trend else ("rgba(239, 68, 68, 0.05)" if "Bearish" in a_trend else "rgba(245, 158, 11, 0.05)")
-            
-                with st.expander(f"🔀 View Alternate Count ({(a_conf*100):.0f}% Prob)"):
-                    st.markdown(f"""
-                    <div style="background-color: {a_bg_color}; border-left: 4px solid {a_color}; padding: 15px; border-radius: 4px; margin-top: 5px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h5 style="color: {a_color}; margin: 0;">🔄 Alternate Scenario</h5>
-                            <span style="color: {a_color}; font-weight: bold; font-size: 13px;">{(a_conf*100):.0f}% Prob</span>
-                        </div>
-                        <p style="margin: 5px 0;"><b>Scenario:</b> {a_count.get('scenario')} ({a_count.get('larger_context')})</p>
-                        <p style="margin: 5px 0; margin-bottom: 10px;"><b>Trend Bias:</b> <span style="color: {a_color}; font-weight: 600;">{a_trend}</span></p>
-                    """, unsafe_allow_html=True)
-                
-                    st.progress(a_conf)
-                
-                    a_guidelines = a_count.get("guidelines_met", [])
-                    if a_guidelines:
-                        agl_html = " ".join([f"<span style='background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60A5FA; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; display: inline-block; margin-bottom: 5px;'>{g}</span>" for g in a_guidelines])
-                        st.markdown(f"<div style='margin: 10px 0;'>{agl_html}</div>", unsafe_allow_html=True)
-                
-                    a_action = a_count.get("actionable", {})
-                    if a_action:
-                        st.markdown(f"""
-                        <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 10px; font-size: 14px;">
-                            <div>🎯 Target: <b style="color: #fff;">{a_action.get('target_price', 'N/A')}</b></div>
-                            <div>🛑 Inval: <b style="color: #fff;">{a_action.get('invalidation_level', 'N/A')}</b></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+        # Tactical Trade Recommendation & Quick Tips Card
+        tips = engine.generate_tactical_tips(find_last_wave_block(active_waves), trade_rec)
+        st.markdown("#### 💡 Tactical Trade & Quick Tips")
+        
+        pattern_rules_html = "".join([f"<li style='margin-bottom: 4px;'>{rule}</li>" for rule in tips.get('pattern_rules', [])])
+        
+        st.markdown(f"""
+        <div class="metric-card">
+            <p style="margin-bottom: 8px;"><strong style="color: #00F0FF;">Entry:</strong> {tips.get('entry_tip', '')}</p>
+            <p style="margin-bottom: 8px;"><strong style="color: #FF4A6B;">Stop:</strong> {tips.get('stop_tip', '')}</p>
+            <p style="margin-bottom: 12px;"><strong style="color: #10B981;">Exit:</strong> {tips.get('exit_tip', '')}</p>
+            <div style="padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+                <span style="color: #94A3B8; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Pattern Rules</span>
+                <ul style="color: #E2E8F0; font-size: 13px; margin-top: 8px; padding-left: 20px;">
+                    {pattern_rules_html}
+                </ul>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col_details:
         # Analysis Tabs
@@ -995,11 +795,7 @@ with tab_ew:
             else:
                 st.info("No valid alternate wave structures found.")
 
-    # Display Data Details at Bottom of Page
-    st.markdown("---")
-    st.markdown("### 📊 Cleaned Historical Price Data")
-    with st.expander("Expand to view historical daily records"):
-        st.dataframe(df.sort_values('Date', ascending=False), use_container_width=True)
+    # Raw data table removed (YAGNI: dev tooling, not trader UX)
 
 
 with tab_inst:
