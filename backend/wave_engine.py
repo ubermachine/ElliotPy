@@ -972,7 +972,7 @@ class DailyElliottWaveEngine:
         }
         return payload
 
-    def calculate_enhanced_stats(self, primary_waves: List[WaveNode], alternate_waves: List[List[WaveNode]]) -> Dict[str, Any]:
+    def calculate_enhanced_stats(self, primary_waves: List[WaveNode], alternate_waves: List[List[WaveNode]], trade_rec: Dict[str, Any] = None) -> Dict[str, Any]:
         """Calculates rich structural statistics: Phase, Progress %, Fib Harmony Score, ATR Context, Momentum."""
         if not primary_waves:
             return {
@@ -1023,8 +1023,15 @@ class DailyElliottWaveEngine:
         else:
             atr_context = "Normal Volatility"
 
-        # Calculate Momentum Status
-        momentum_status = "🟢 Bullish Momentum Confirmed" if last_wave.end_pivot.price > last_wave.start_pivot.price else "🔴 Bearish Momentum Dominant"
+        # Calculate Momentum Status (Harmonized with Setup Bias to prevent contradictions)
+        bias = trade_rec.get("bias", "") if trade_rec else ""
+        if "Bullish" in bias:
+            momentum_status = "🟢 Bullish Setup Confirmed"
+        elif "Bearish" in bias:
+            momentum_status = "🔴 Bearish Setup Confirmed"
+        else:
+            momentum_status = "🟡 Neutral / Consolidating"
+
         if 'RSI' in self.df.columns and not pd.isna(self.df['RSI'].iloc[-1]):
             rsi = self.df['RSI'].iloc[-1]
             if rsi > 70:
@@ -1064,15 +1071,15 @@ class DailyElliottWaveEngine:
             if curr < target:
                 entry_tip = f"Bullish setup: Consider entry in zone {curr:,.2f}–{curr*1.005:,.2f} targeting {target:,.2f}."
             else:
-                entry_tip = f"Bearish retrace setup: Consider entry near {curr:,.2f} targeting {target:,.2f}."
+                entry_tip = f"Bearish retrace setup: Consider short entry near {curr:,.2f} targeting lower support at {target:,.2f}."
 
         stop_tip = "Keep invalidation tight to structural pivot bounds."
         if inval:
             stop_tip = f"Place hard stop loss at invalidation level {inval:,.2f}. Trail stop to breakeven once price moves 50% toward target."
 
-        exit_tip = "Scale out 50% position at primary target; hold remaining for higher degree extension."
+        exit_tip = "Scale out position at primary target; hold remainder for higher degree extension."
         if target:
-            exit_tip = f"Primary profit target set at {target:,.2f}. Lock in profits at Fib 0.618 milestone."
+            exit_tip = f"Primary target set at {target:,.2f}. Scale out profits incrementally as price approaches target."
 
         pattern_rules = []
         if lbl in ["[1]", "(1)", "1", "{1}", "i"]:

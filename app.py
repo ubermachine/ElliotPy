@@ -5,7 +5,10 @@ import datetime
 import subprocess
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import importlib
 from backend.data_manager import DataManager
+import backend.wave_engine
+importlib.reload(backend.wave_engine)
 from backend.wave_engine import DailyElliottWaveEngine, WaveNode, Pivot
 
 # Set up Streamlit Page Configuration
@@ -368,6 +371,8 @@ st.title("🌊 Elliott Wave Charting Engine")
 st.sidebar.header("📊 Controls & Inputs")
 
 preset_options = {
+    "Nifty 50 Index (^NSEI)": "^NSEI",
+    "Nifty Bank Index (^NSEBANK)": "^NSEBANK",
     "Silver Futures (SI=F)": "SI=F",
     "Gold Futures (GC=F)": "GC=F",
     "S&P 500 Index (^SPX)": "^SPX",
@@ -619,23 +624,10 @@ with tab_ew:
     col_stats, col_details = st.columns([1, 2])
 
     with col_stats:
-        st.markdown("### 🔍 Wave Statistics")
-    
-        # Active Count Description Card
-        if active_waves:
-            title = "Alternate Count" if is_alt else "Primary Wave Structure"
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>{title}</h4>
-                <p style="font-size: 13px; color: #94A3B8;">Asset: <b>{active_symbol}</b></p>
-                <p style="font-size: 13px; color: #94A3B8;">Degree: <b>{active_waves[0].degree}</b></p>
-                <p style="font-size: 13px; color: #94A3B8;">Pricing Scale: <b>{'Logarithmic' if use_log else 'Linear'}</b></p>
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown("### 📈 Enhanced Wave Statistics")
         
-        # Enhanced Wave Statistics Panel
-        stats = engine.calculate_enhanced_stats(active_waves, alternates)
-        st.markdown("#### 📈 Enhanced Wave Statistics")
+        # Enhanced Wave Statistics Panel (harmonized with trade_rec)
+        stats = engine.calculate_enhanced_stats(active_waves, alternates, trade_rec)
         st.markdown(f"""
         <div class="metric-card">
             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
