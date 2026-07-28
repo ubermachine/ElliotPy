@@ -247,6 +247,82 @@ class DailyElliottWaveEngine:
             pivot_sets[float(mult)] = pivots
         return pivot_sets
 
+    def _generate_candidates(self, pivot_sets: Dict[float, List[Pivot]]) -> List[CandidateCount]:
+        """Generates candidate wave counts from multiple resolutions and window sizes."""
+        candidates = []
+        chart_range = self.df['Close'].max() - self.df['Close'].min()
+        min_range = chart_range * 0.05  # Skip tiny structures
+
+        for resolution, pivots in pivot_sets.items():
+            n = len(pivots)
+            for window_size in [6, 8, 10, 12]:
+                if n < window_size:
+                    continue
+                for i in range(n - window_size + 1):
+                    window = pivots[i:i + window_size]
+                    price_range = abs(window[-1].price - window[0].price)
+                    if price_range < min_range:
+                        continue
+
+                    # For window_size == 6, test directly
+                    if window_size == 6:
+                        test_pivots = window
+                    else:
+                        # Extract 6 most significant pivots from larger window
+                        test_pivots = self._extract_significant_pivots(window, count=6)
+                        if len(test_pivots) < 6:
+                            continue
+
+                    # Try impulse
+                    is_imp, checklist = self.verify_impulse_rules(test_pivots)
+                    if is_imp:
+                        score = self.score_impulse(test_pivots)
+                        inv = test_pivots[0].price if (test_pivots[1].price > test_pivots[0].price) else test_pivots[0].price
+                        candidates.append(CandidateCount(
+                            waves=[], score=score, resolution=resolution,
+                            window_size=window_size, pattern_type="impulse",
+                            invalidation=inv,
+                            anchor_start_idx=test_pivots[0].index,
+                            anchor_end_idx=test_pivots[-1].index
+                        ))
+
+                    # Try diagonal
+                    is_diag, _ = self.verify_diagonal_rules(test_pivots)
+                    if is_diag and not is_imp:
+                        score = self.score_diagonal(test_pivots)
+                        candidates.append(CandidateCount(
+                            waves=[], score=score, resolution=resolution,
+                            window_size=window_size, pattern_type="diagonal",
+                            invalidation=test_pivots[0].price,
+                            anchor_start_idx=test_pivots[0].index,
+                            anchor_end_idx=test_pivots[-1].index
+                        ))
+
+        return candidates
+
+    def _extract_significant_pivots(self, pivots: List[Pivot], count: int = 6) -> List[Pivot]:
+        """From a list of pivots, extracts the `count` most significant ones by price range."""
+        if len(pivots) <= count:
+            return pivots
+
+        # Score each pivot by how much price changes around it
+        scored = []
+        for j, p in enumerate(pivots):
+            range_before = abs(p.price - pivots[j-1].price) if j > 0 else 0
+            range_after = abs(pivots[j+1].price - p.price) if j < len(pivots)-1 else 0
+            scored.append((range_before + range_after, j, p))
+
+        # Always keep first and last
+        scored.sort(key=lambda x: x[0], reverse=True)
+        keep_indices = {0, len(pivots) - 1}
+        for _, j, _ in scored:
+            if len(keep_indices) >= count:
+                break
+            keep_indices.add(j)
+
+        selected = [pivots[j] for j in sorted(keep_indices)]
+        return selected[:count]
+
     def _determine_degree_by_duration(self, start_pivot: 'Pivot', end_pivot: 'Pivot') -> str:
         """
         Assigns an Elliott Wave degree based on the CALENDAR duration between two pivots.

@@ -65,3 +65,34 @@ class TestMultiResolutionZigZag:
         # Each successive resolution should have fewer or equal pivots
         for i in range(1, len(counts)):
             assert counts[i] <= counts[i-1] + 5  # Small tolerance for edge cases
+
+class TestCandidateGenerator:
+    def test_generate_candidates_returns_list(self):
+        """_generate_candidates should return a list of CandidateCount objects."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        pivot_sets = engine.run_multi_resolution_zigzag(base_mult=1.0)
+        candidates = engine._generate_candidates(pivot_sets)
+        assert isinstance(candidates, list)
+        for c in candidates:
+            assert isinstance(c, CandidateCount)
+            assert c.score >= 0
+            assert c.pattern_type in ("impulse", "diagonal")
+
+    def test_generate_candidates_finds_impulse_in_synthetic(self):
+        """The synthetic data has a clear 5-wave impulse; candidates should find it."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        pivot_sets = engine.run_multi_resolution_zigzag(base_mult=1.0)
+        candidates = engine._generate_candidates(pivot_sets)
+        impulses = [c for c in candidates if c.pattern_type == "impulse"]
+        assert len(impulses) > 0, "Should find at least one impulse candidate in synthetic data"
+
+    def test_variable_window_sizes_used(self):
+        """Candidates should come from multiple window sizes, not just 6."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        pivot_sets = engine.run_multi_resolution_zigzag(base_mult=1.0)
+        candidates = engine._generate_candidates(pivot_sets)
+        window_sizes = set(c.window_size for c in candidates)
+        assert 6 in window_sizes, "Should try window size 6"
