@@ -361,109 +361,120 @@ class DailyElliottWaveEngine:
         selected = [pivots[j] for j in sorted(keep_indices)]
         return selected[:count]
 
-    def _determine_degree_by_duration(self, start_pivot: 'Pivot', end_pivot: 'Pivot') -> str:
-        """
-        Assigns an Elliott Wave degree based on the CALENDAR duration between two pivots.
-        Uses actual dates rather than bar indices to correctly handle non-trading days.
-        """
-        try:
-            delta = (pd.Timestamp(end_pivot.time) - pd.Timestamp(start_pivot.time)).days
-        except Exception:
-            # Fallback: estimate from bar count (assume ~252 trading days/year)
-            delta = int((end_pivot.index - start_pivot.index) * 365 / 252)
-
-        if delta > 730:      # > 2 years
+    def _determine_degree_by_structure(self, wave_price_range: float, chart_total_range: float) -> str:
+        """Assigns degree by price range ratio — asset-agnostic and volatility-adaptive."""
+        ratio = wave_price_range / max(chart_total_range, 0.001)
+        if ratio > 0.60:
             return "Cycle"
-        elif delta > 180:    # > 6 months
+        elif ratio > 0.30:
             return "Primary"
-        elif delta > 45:     # > 6 weeks
+        elif ratio > 0.10:
             return "Intermediate"
-        elif delta > 14:     # > 2 weeks
+        elif ratio > 0.03:
             return "Minor"
         else:
             return "Minuette"
 
+    def _determine_degree_by_duration(self, start_pivot: 'Pivot', end_pivot: 'Pivot') -> str:
+        """LEGACY: Kept for _fallback_sequential compatibility. Delegates to structural method."""
+        price_range = abs(end_pivot.price - start_pivot.price)
+        chart_range = self.df['Close'].max() - self.df['Close'].min()
+        return self._determine_degree_by_structure(price_range, chart_range)
+
     def run_analysis(self, min_move_mult: float = 1.0) -> Tuple[List[WaveNode], List[List[WaveNode]]]:
-        """Top-Down Elliott Wave Analysis."""
-        pivots_t1 = self.run_adaptive_zigzag(min_move_mult)
-        if len(pivots_t1) < 2:
-            return [], []
-            
-        # Top-down labeling (find anchor impulse, fill gaps)
-        primary_count = self._top_down_label(pivots_t1)
-        
-        # Subdivide each labeled wave dynamically
-        for wave in primary_count:
-            self._recursive_subdivide(wave, min_move_mult * 0.4, depth=2)
-            
-        # Generate an alternate count by strictly viewing it as a correction
-        alt_count = self._top_down_label(pivots_t1, force_corrective=True)
-        for wave in alt_count:
-            self._recursive_subdivide(wave, min_move_mult * 0.4, depth=2)
-            
-        alternates = [alt_count] if alt_count else []
-            
+        """Multi-Resolution Elliott Wave Analysis."""
+        # Step 1: Generate pivot sets at multiple resolutions
+        pivot_sets = self.run_multi_resolution_zigzag(min_move_mult)
+
+        # Step 2: Generate all valid impulse/diagonal candidates
+        candidates = self._generate_candidates(pivot_sets)
+
+        # Step 3: Rank and deduplicate
+        ranked = self._rank_candidates(candidates)
+
+        if not ranked:
+            # No impulse found at any resolution — fall back to corrective on the default pivots
+            default_pivots = pivot_sets.get(float(min_move_mult), list(pivot_sets.values())[0])
+            primary_count = self._fallback_sequential(default_pivots, 0, len(default_pivots))
+            return primary_count, []
+
+        # Step 4: Build primary count from best candidate
+        chart_range = self.df['Close'].max() - self.df['Close'].min()
+        best = ranked[0]
+        best_pivots = self._get_pivots_for_candidate(best, pivot_sets)
+        if best_pivots:
+            primary_count = self._build_count_from_candidate(best, best_pivots, pivot_sets, min_move_mult, chart_range)
+        else:
+            default_pivots = list(pivot_sets.values())[0]
+            primary_count = self._fallback_sequential(default_pivots, 0, len(default_pivots))
+
+        # Step 5: Build alternates from remaining ranked candidates
+        alternates = []
+        for alt_candidate in ranked[1:3]:  # Top 2 alternates
+            alt_pivots = self._get_pivots_for_candidate(alt_candidate, pivot_sets)
+            if alt_pivots:
+                alt_count = self._build_count_from_candidate(alt_candidate, alt_pivots, pivot_sets, min_move_mult, chart_range)
+                if alt_count:
+                    alternates.append(alt_count)
+
+        # Also add a forced-corrective alternate for diversity
+        default_pivots = pivot_sets.get(float(min_move_mult), list(pivot_sets.values())[0])
+        corrective_alt = self._fallback_sequential(default_pivots, 0, len(default_pivots))
+        if corrective_alt and len(alternates) < 3:
+            alternates.append(corrective_alt)
+
         return primary_count, alternates
 
-    def _top_down_label(self, pivots: List[Pivot], force_corrective: bool = False) -> List[WaveNode]:
-        """
-        Anchor-based parsing:
-        1. Finds the best 5-wave sequence to anchor the chart.
-        2. Fills the preceding and succeeding pivots as corrective or connecting waves.
-        """
-        waves: List[WaveNode] = []
-        n = len(pivots)
-        
-        if n < 6 or force_corrective:
-            # Not enough pivots for a motive, or forced corrective. Just sequence 3-wave fallbacks.
-            return self._fallback_sequential(pivots, 0, n)
-            
-        # Find all valid 5-wave motive sequences
-        motive_candidates = []
-        for i in range(n - 5):
-            candidate = pivots[i:i+6]
-            is_imp, _ = self.verify_impulse_rules(candidate)
-            is_diag, _ = self.verify_diagonal_rules(candidate)
-            if is_imp or is_diag:
-                score = self.score_impulse(candidate) if is_imp else self.score_diagonal(candidate)
-                # Size in price
-                size = abs(candidate[-1].price - candidate[0].price)
-                motive_candidates.append((score, size, i, candidate, is_diag))
-                
-        if not motive_candidates:
-            return self._fallback_sequential(pivots, 0, n)
+    def _get_pivots_for_candidate(self, candidate: 'CandidateCount', pivot_sets: Dict[float, List[Pivot]]) -> Optional[List[Pivot]]:
+        """Retrieves the 6 anchor pivots for a candidate from its resolution's pivot set."""
+        pivots = pivot_sets.get(candidate.resolution, [])
+        for i in range(len(pivots) - 5):
+            if pivots[i].index == candidate.anchor_start_idx:
+                # Find the pivots spanning from anchor_start to anchor_end
+                end_candidates = [j for j in range(i+5, len(pivots)) if pivots[j].index == candidate.anchor_end_idx]
+                if end_candidates:
+                    span = pivots[i:end_candidates[0]+1]
+                    if len(span) >= 6:
+                        return self._extract_significant_pivots(span, count=6) if len(span) > 6 else span
+        return None
 
-        # Add recency bonus: reward structures that end closer to the most recent bar.
-        # This stops an old massive wave from always dominating over a fresh recent one.
-        total_bars = float(max(pivots[-1].index, 1))
-        adjusted = []
-        for score, size, i, cand, is_diag in motive_candidates:
-            recency_bonus = (cand[-1].index / total_bars) * 3.0
-            adjusted.append((score + recency_bonus, size, i, cand, is_diag))
+    def _build_count_from_candidate(self, candidate: 'CandidateCount', anchor_pivots: List[Pivot],
+                                     pivot_sets: Dict[float, List[Pivot]], min_move_mult: float,
+                                     chart_range: float) -> List[WaveNode]:
+        """Builds a full wave count: anchor motive + corrective fills before/after."""
+        waves = []
+        degree = self._determine_degree_by_structure(
+            abs(anchor_pivots[-1].price - anchor_pivots[0].price), chart_range
+        )
+        is_diagonal = candidate.pattern_type == "diagonal"
 
-        # Pick the best anchor (highest adjusted score, tie-break by price size)
-        adjusted.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        best_anchor = adjusted[0]
-        score, size, best_i, anchor_pivots, is_diag = best_anchor
+        # Build anchor motive waves
+        anchor_waves = self._construct_waves_from_pivots(anchor_pivots, degree, is_diagonal=is_diagonal)
 
-        # Determine degree based on actual calendar duration of this anchor
-        degree = self._determine_degree_by_duration(anchor_pivots[0], anchor_pivots[-1])
-        
-        # 1. Fill preceding pivots
-        if best_i > 0:
-            pre_waves = self._top_down_label(pivots[:best_i+1], force_corrective=force_corrective)
+        # Find surrounding pivots from the same resolution for corrective fills
+        all_pivots = pivot_sets.get(candidate.resolution, [])
+
+        # Pre-anchor corrective fill
+        pre_pivots = [p for p in all_pivots if p.index < anchor_pivots[0].index]
+        if len(pre_pivots) >= 2:
+            pre_pivots.append(anchor_pivots[0])  # Connect to anchor start
+            pre_waves = self._fallback_sequential(pre_pivots, 0, len(pre_pivots))
             waves.extend(pre_waves)
-            
-        # 2. Append the anchor motive
-        anchor_waves = self._construct_waves_from_pivots(anchor_pivots, degree, is_diagonal=is_diag)
+
+        # Anchor motive
         waves.extend(anchor_waves)
-        
-        # 3. Fill succeeding pivots
-        end_idx = best_i + 5
-        if end_idx < n - 1:
-            post_waves = self._top_down_label(pivots[end_idx:], force_corrective=force_corrective)
+
+        # Post-anchor corrective fill
+        post_pivots = [p for p in all_pivots if p.index > anchor_pivots[-1].index]
+        if len(post_pivots) >= 2:
+            post_pivots.insert(0, anchor_pivots[-1])  # Connect from anchor end
+            post_waves = self._fallback_sequential(post_pivots, 0, len(post_pivots))
             waves.extend(post_waves)
-            
+
+        # Subdivide
+        for wave in anchor_waves:
+            self._recursive_subdivide(wave, min_move_mult * 0.4, depth=2)
+
         return waves
 
     def _fallback_sequential(self, pivots: List[Pivot], offset: int, length: int, degree: str = None) -> List[WaveNode]:

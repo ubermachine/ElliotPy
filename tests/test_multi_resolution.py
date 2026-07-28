@@ -142,3 +142,48 @@ class TestStrictRulesAndRanker:
         assert len(ranked) == 1, "Overlapping candidates should be deduplicated"
         assert ranked[0].score >= 5.0  # Keep the higher-scored one
 
+class TestRebuiltAnalysis:
+    def test_degree_by_structure(self):
+        """_determine_degree_by_structure should assign degree by price range ratio."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        assert engine._determine_degree_by_structure(50.0, 60.0) == "Cycle"
+        assert engine._determine_degree_by_structure(20.0, 60.0) == "Primary"
+        assert engine._determine_degree_by_structure(8.0, 60.0) == "Intermediate"
+        assert engine._determine_degree_by_structure(2.0, 60.0) == "Minor"
+        assert engine._determine_degree_by_structure(0.5, 60.0) == "Minuette"
+
+    def test_run_analysis_returns_same_interface(self):
+        """run_analysis must return (List[WaveNode], List[List[WaveNode]])."""
+        from backend.wave_engine import WaveNode
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        primary, alternates = engine.run_analysis(min_move_mult=1.0)
+        assert isinstance(primary, list)
+        assert isinstance(alternates, list)
+        for w in primary:
+            assert isinstance(w, WaveNode) # type: ignore
+        for alt in alternates:
+            assert isinstance(alt, list)
+
+    def test_run_analysis_finds_motive_in_synthetic(self):
+        """Synthetic 5-wave data should produce at least one motive wave label."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        primary, alternates = engine.run_analysis(min_move_mult=1.0)
+        motive_labels = {"I", "II", "III", "IV", "V", "[1]", "[2]", "[3]", "[4]", "[5]",
+                        "(1)", "(2)", "(3)", "(4)", "(5)", "{1}", "{2}", "{3}", "{4}", "{5}",
+                        "i", "ii", "iii", "iv", "v"}
+        found_motive = any(w.label in motive_labels for w in primary)
+        assert found_motive, f"Should find motive waves. Got labels: {[w.label for w in primary]}"
+
+    def test_existing_tests_still_pass(self):
+        """Sanity: existing stats and tips methods still work with rebuilt engine."""
+        from backend.wave_engine import WaveNode
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        primary, alternates = engine.run_analysis(min_move_mult=1.0)
+        stats = engine.calculate_enhanced_stats(primary, alternates)
+        assert "phase" in stats
+        tips = engine.generate_tactical_tips(primary, {"target": 50.0, "invalidation": 20.0, "current_price": 35.0, "bias": "Bullish"})
+        assert "entry_tip" in tips
