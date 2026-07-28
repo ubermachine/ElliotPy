@@ -300,6 +300,44 @@ class DailyElliottWaveEngine:
 
         return candidates
 
+    def _rank_candidates(self, candidates: List['CandidateCount']) -> List['CandidateCount']:
+        """Ranks candidates by composite score, deduplicates overlapping structures."""
+        if not candidates:
+            return []
+
+        total_bars = len(self.df)
+        current_price = float(self.df['Close'].iloc[-1])
+
+        # Apply bonuses and penalties
+        for c in candidates:
+            recency_bonus = (c.anchor_end_idx / max(total_bars, 1)) * 5.0
+            c.score += recency_bonus
+
+            if c.invalidation is not None and c.invalidation < current_price * 0.5:
+                c.score -= 5.0  # Penalize stale invalidation levels
+
+        # Sort by score descending
+        candidates.sort(key=lambda c: c.score, reverse=True)
+
+        # Deduplicate: remove candidates with >70% index overlap with higher-scored ones
+        kept = []
+        for c in candidates:
+            overlap = False
+            for k in kept:
+                # Calculate overlap ratio
+                overlap_start = max(c.anchor_start_idx, k.anchor_start_idx)
+                overlap_end = min(c.anchor_end_idx, k.anchor_end_idx)
+                if overlap_end > overlap_start:
+                    overlap_len = overlap_end - overlap_start
+                    c_len = max(c.anchor_end_idx - c.anchor_start_idx, 1)
+                    if overlap_len / c_len > 0.70:
+                        overlap = True
+                        break
+            if not overlap:
+                kept.append(c)
+
+        return kept
+
     def _extract_significant_pivots(self, pivots: List[Pivot], count: int = 6) -> List[Pivot]:
         """From a list of pivots, extracts the `count` most significant ones by price range."""
         if len(pivots) <= count:
@@ -495,27 +533,24 @@ class DailyElliottWaveEngine:
         if not direction_ok:
             return False, checklist
             
-        # Tolerance buffers
-        buffer = self._get_atr_buffer(pivots[0])
+        # STRICT: No ATR buffer tolerance on cardinal rules
             
         # 1. W2 retracement < 100% of W1 (with noise tolerance)
-        w2_retrace_ok = v[2] > (v[0] - buffer) if is_uptrend else v[2] < (v[0] + buffer)
-        checklist.append({"rule": "W2 Retracement < 100% W1 (w/ buffer)", "status": w2_retrace_ok})
+        w2_retrace_ok = v[2] > v[0] if is_uptrend else v[2] < v[0]
+        checklist.append({"rule": "W2 Retracement < 100% W1", "status": w2_retrace_ok})
         
         # 2. W3 not the shortest (price)
         w3_not_shortest = abs(w3) >= min(abs(w1), abs(w5))
         checklist.append({"rule": "W3 Not Shortest Price", "status": w3_not_shortest})
         
         # 3. W4 no overlap with W1 territory (with noise tolerance)
-        w4_no_overlap = v[4] > (v[1] - buffer) if is_uptrend else v[4] < (v[1] + buffer)
-        checklist.append({"rule": "W4-W1 No Overlap (w/ buffer)", "status": w4_no_overlap})
+        w4_no_overlap = v[4] > v[1] if is_uptrend else v[4] < v[1]
+        checklist.append({"rule": "W4-W1 No Overlap", "status": w4_no_overlap})
         
-        # 4. W3 not the shortest in time (slightly relaxed)
-        t1, t3, t5 = pivots[1].index - pivots[0].index, pivots[3].index - pivots[2].index, pivots[5].index - pivots[4].index
-        w3_time_ok = t3 >= 0.5 * max(t1, t5)
-        checklist.append({"rule": "W3 Duration >= 50% of Max(W1, W5)", "status": w3_time_ok})
+        # W3 time ratio removed — not a cardinal Elliott Wave rule
         
         # 4b. Time Fibs - Wave 2 duration shouldn't exceed 5x Wave 1
+        t1 = pivots[1].index - pivots[0].index
         t2 = pivots[2].index - pivots[1].index
         w2_time_ok = t2 <= 5 * max(1, t1)
         checklist.append({"rule": "W2 Duration <= 5x W1 (Time Stop)", "status": w2_time_ok})

@@ -96,3 +96,49 @@ class TestCandidateGenerator:
         candidates = engine._generate_candidates(pivot_sets)
         window_sizes = set(c.window_size for c in candidates)
         assert 6 in window_sizes, "Should try window size 6"
+
+class TestStrictRulesAndRanker:
+    def test_verify_impulse_no_atr_buffer(self):
+        """verify_impulse_rules should reject W2 overlap without ATR tolerance."""
+        df = _make_synthetic_df(100)
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        # Create 6 pivots where W2 retraces exactly 100% of W1 (should fail strictly)
+        pivots = [
+            Pivot(0, 20.0, np.log(20.0), "LOW", df.index[0]),
+            Pivot(10, 25.0, np.log(25.0), "HIGH", df.index[10]),
+            Pivot(20, 20.0, np.log(20.0), "LOW", df.index[20]),  # W2 = exactly W1 origin
+            Pivot(40, 35.0, np.log(35.0), "HIGH", df.index[40]),
+            Pivot(50, 28.0, np.log(28.0), "LOW", df.index[50]),
+            Pivot(60, 38.0, np.log(38.0), "HIGH", df.index[60]),
+        ]
+        passed, checklist = engine.verify_impulse_rules(pivots)
+        assert passed is False, "Exact 100% W2 retracement should fail strict rules"
+
+    def test_rank_candidates_returns_sorted(self):
+        """_rank_candidates should return candidates sorted by final score descending."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        pivot_sets = engine.run_multi_resolution_zigzag(base_mult=1.0)
+        candidates = engine._generate_candidates(pivot_sets)
+        if not candidates:
+            pytest.skip("No candidates found in synthetic data")
+        ranked = engine._rank_candidates(candidates)
+        assert len(ranked) > 0
+        for i in range(1, len(ranked)):
+            assert ranked[i-1].score >= ranked[i].score
+
+    def test_rank_deduplicates_overlapping(self):
+        """Overlapping candidates (>70% index overlap) should be deduplicated."""
+        df = _make_synthetic_df()
+        engine = DailyElliottWaveEngine(df, use_log_scale=False)
+        # Create two nearly-identical candidates
+        c1 = CandidateCount(waves=[], score=10.0, resolution=1.0, window_size=6,
+                           pattern_type="impulse", invalidation=20.0,
+                           anchor_start_idx=0, anchor_end_idx=100)
+        c2 = CandidateCount(waves=[], score=8.0, resolution=2.0, window_size=6,
+                           pattern_type="impulse", invalidation=20.0,
+                           anchor_start_idx=5, anchor_end_idx=95)  # 90% overlap with c1
+        ranked = engine._rank_candidates([c1, c2])
+        assert len(ranked) == 1, "Overlapping candidates should be deduplicated"
+        assert ranked[0].score >= 5.0  # Keep the higher-scored one
+
