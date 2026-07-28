@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
-
+from dataclasses import dataclass
 class Pivot:
     def __init__(self, index: int, price: float, log_price: float, type_str: str, time: Any):
         self.index = index
@@ -63,6 +63,19 @@ class WaveNode:
             "score": float(self.score),
             "rule_checklist": self.rule_checklist
         }
+
+
+@dataclass
+class CandidateCount:
+    """Represents a candidate wave count from one ZigZag resolution + window size."""
+    waves: List['WaveNode']
+    score: float
+    resolution: float
+    window_size: int
+    pattern_type: str          # 'impulse', 'diagonal', 'corrective'
+    invalidation: Optional[float]
+    anchor_start_idx: int
+    anchor_end_idx: int
 
 
 class DailyElliottWaveEngine:
@@ -224,6 +237,15 @@ class DailyElliottWaveEngine:
             ))
             
         return pivots
+
+    def run_multi_resolution_zigzag(self, base_mult: float = 1.0) -> Dict[float, List[Pivot]]:
+        """Runs ZigZag at multiple ATR sensitivity levels to capture macro and micro structure."""
+        multipliers = [base_mult * 0.5, base_mult, base_mult * 2.0, base_mult * 3.0]
+        pivot_sets = {}
+        for mult in multipliers:
+            pivots = self.run_adaptive_zigzag(mult)
+            pivot_sets[float(mult)] = pivots
+        return pivot_sets
 
     def _determine_degree_by_duration(self, start_pivot: 'Pivot', end_pivot: 'Pivot') -> str:
         """
