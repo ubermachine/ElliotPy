@@ -1,0 +1,3 @@
+## 2024-10-10 - Pandas .iloc bottleneck in ZigZag
+**Learning:** Using Pandas `.iloc` inside tight loops like the Zig-Zag algorithm is extremely slow because of the overhead of series creation, indexing and checking for every single item. When pulling data from datetime series, `.values` returns `numpy.datetime64` instead of Python datetimes which can cause compatibility issues with downstream components.
+**Action:** Always extract Pandas columns to numpy arrays using `.values` before iterating over them in loops. For date columns, specifically use `.dt.to_pydatetime()` if the data is datetime64 to ensure correct datetime object formatting.
