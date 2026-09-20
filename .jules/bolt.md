@@ -1,0 +1,3 @@
+## 2023-10-27 - Vectorizing Pandas in Backend Analysis Loops
+**Learning:** Iterating over large financial datasets using pandas `.iterrows()` and `.iloc[]` indexing within algorithmic calculations (like Volume Profile or Elliott Wave mapping) creates a massive performance bottleneck. These operations invoke significant overhead per iteration.
+**Action:** Extract pandas series into numpy arrays via `.values` before iterating. When dealing with mathematical transformations, vectorize them across the entire array prior to the loop (e.g. `np.log(df['High'].values)`). This can yield speedups of 6x to 65x in data processing engines.
