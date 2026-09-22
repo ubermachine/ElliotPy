@@ -1,0 +1,3 @@
+## 2024-05-24 - Pandas Row Iteration Bottleneck in Financial Engines
+**Learning:** Pandas `.iloc` and `.iterrows()` are significant performance bottlenecks when used inside tight loops for iterative financial algorithms (like ZigZag, Point & Figure, Volume Profile). They add massive overhead per row access.
+**Action:** Always pre-fetch required DataFrame columns as NumPy arrays (using `.values` or `.to_numpy()`) before iterating, and use fast NumPy equivalents (like `np.argmax()` instead of `.idxmax()`) within loops. For datetime arrays, use `.dt.to_pydatetime()` to prevent `numpy.datetime64` downstream type errors.
