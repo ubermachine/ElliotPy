@@ -22,9 +22,12 @@ class VolumeProfileEngine:
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         volume_profile = np.zeros(self.bins)
 
-        for _, row in self.df.iterrows():
-            low = row['Low']
-            high = row['High']
+        lows = self.df['Low'].values
+        highs = self.df['High'].values
+
+        for i in range(len(lows)):
+            low = lows[i]
+            high = highs[i]
             
             # PERMANENT TPO OVERRIDE: 
             # Ignore real volume (which is often flawed/missing for commodities) 
@@ -98,14 +101,19 @@ class PointAndFigureEngine:
             return []
 
         columns = []
-        first_close = np.log(self.df['Close'].iloc[0])
+
+        closes = self.df['Close'].values
+        highs = np.log(self.df['High'].values)
+        lows = np.log(self.df['Low'].values)
+
+        first_close = np.log(closes[0])
         current_trend = None
         current_box_price = first_close
         current_col = []
 
-        for _, row in self.df.iterrows():
-            high = np.log(row['High'])
-            low = np.log(row['Low'])
+        for i in range(len(highs)):
+            high = highs[i]
+            low = lows[i]
             
             if current_trend is None:
                 if high >= current_box_price + self.box_size:
@@ -123,7 +131,7 @@ class PointAndFigureEngine:
             if current_trend == 'X':
                 if high >= current_box_price + self.box_size:
                     num_boxes = int((high - current_box_price) / self.box_size)
-                    new_boxes = [current_box_price + (i * self.box_size) for i in range(1, num_boxes + 1)]
+                    new_boxes = [current_box_price + (j * self.box_size) for j in range(1, num_boxes + 1)]
                     current_col.extend(new_boxes)
                     current_box_price = current_col[-1]
                 elif low <= current_box_price - self.reversal:
@@ -132,13 +140,13 @@ class PointAndFigureEngine:
                     current_trend = 'O'
                     start_box = current_box_price - self.box_size
                     num_boxes = int((start_box - low) / self.box_size)
-                    current_col = [start_box - (i * self.box_size) for i in range(num_boxes + 1)]
+                    current_col = [start_box - (j * self.box_size) for j in range(num_boxes + 1)]
                     current_box_price = current_col[-1] if len(current_col) > 0 else start_box
 
             elif current_trend == 'O':
                 if low <= current_box_price - self.box_size:
                     num_boxes = int((current_box_price - low) / self.box_size)
-                    new_boxes = [current_box_price - (i * self.box_size) for i in range(1, num_boxes + 1)]
+                    new_boxes = [current_box_price - (j * self.box_size) for j in range(1, num_boxes + 1)]
                     current_col.extend(new_boxes)
                     current_box_price = current_col[-1]
                 elif high >= current_box_price + self.reversal:
@@ -147,7 +155,7 @@ class PointAndFigureEngine:
                     current_trend = 'X'
                     start_box = current_box_price + self.box_size
                     num_boxes = int((high - start_box) / self.box_size)
-                    current_col = [start_box + (i * self.box_size) for i in range(num_boxes + 1)]
+                    current_col = [start_box + (j * self.box_size) for j in range(num_boxes + 1)]
                     current_box_price = current_col[-1] if len(current_col) > 0 else start_box
 
         if current_col:
