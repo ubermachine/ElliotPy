@@ -151,22 +151,41 @@ class DailyElliottWaveEngine:
         if end_idx - start_idx < 2:
             return pivots
             
+        # ⚡ Bolt: Extract numpy arrays to avoid slow pandas iloc
+        highs = self.df['High'].values
+        lows = self.df['Low'].values
+        closes = self.df['Close'].values
+        log_highs = self.df['Log_High'].values
+        log_lows = self.df['Log_Low'].values
+        log_closes = self.df['Log_Close'].values
+        min_move_pcts = self.df['min_move_pct'].values
+
+        # ⚡ Bolt: Memory guideline: Use .dt.to_pydatetime() for dates to return standard python objects
+        if pd.api.types.is_datetime64_any_dtype(self.df['Date']):
+            dates = self.df['Date'].dt.to_pydatetime()
+        else:
+            dates = self.df['Date'].values
+
         # Initialize
         direction = 0
         
         # Find first pivot (compare first few days to find direction)
         initial_period = min(20, end_idx - start_idx)
-        h_idx = self.df['High'].iloc[start_idx:start_idx+initial_period].idxmax()
-        l_idx = self.df['Low'].iloc[start_idx:start_idx+initial_period].idxmin()
+
+        # ⚡ Bolt: Use np.argmax and np.argmin instead of slow pd.idxmax()
+        slice_highs = highs[start_idx:start_idx+initial_period]
+        slice_lows = lows[start_idx:start_idx+initial_period]
+        h_idx = start_idx + np.argmax(slice_highs)
+        l_idx = start_idx + np.argmin(slice_lows)
         
         if h_idx > l_idx:
             # Low came first, so we were going up to High
             pivots.append(Pivot(
                 index=int(l_idx),
-                price=float(self.df['Low'].iloc[l_idx]),
-                log_price=float(self.df['Log_Low'].iloc[l_idx]),
+                price=float(lows[l_idx]),
+                log_price=float(log_lows[l_idx]),
                 type_str="LOW",
-                time=self.df['Date'].iloc[l_idx]
+                time=dates[l_idx]
             ))
             direction = 1
             last_extreme_price = pivots[0].price
@@ -174,21 +193,21 @@ class DailyElliottWaveEngine:
         else:
             pivots.append(Pivot(
                 index=int(h_idx),
-                price=float(self.df['High'].iloc[h_idx]),
-                log_price=float(self.df['Log_High'].iloc[h_idx]),
+                price=float(highs[h_idx]),
+                log_price=float(log_highs[h_idx]),
                 type_str="HIGH",
-                time=self.df['Date'].iloc[h_idx]
+                time=dates[h_idx]
             ))
             direction = -1
             last_extreme_price = pivots[0].price
             last_extreme_idx = pivots[0].index
 
         # Run Zig-Zag loop
+        # ⚡ Bolt: Iterate directly over index and index into fast numpy arrays
         for t in range(int(last_extreme_idx) + 1, end_idx + 1):
-            current_close = float(self.df['Close'].iloc[t])
-            current_high = float(self.df['High'].iloc[t])
-            current_low = float(self.df['Low'].iloc[t])
-            threshold = float(self.df['min_move_pct'].iloc[t]) * min_move_mult
+            current_high = float(highs[t])
+            current_low = float(lows[t])
+            threshold = float(min_move_pcts[t]) * min_move_mult
             
             if direction == 1:  # Looking for HIGH
                 if current_high > last_extreme_price:
@@ -198,10 +217,10 @@ class DailyElliottWaveEngine:
                 if current_low <= last_extreme_price * (1.0 - threshold):
                     pivots.append(Pivot(
                         index=int(last_extreme_idx),
-                        price=float(self.df['High'].iloc[last_extreme_idx]),
-                        log_price=float(self.df['Log_High'].iloc[last_extreme_idx]),
+                        price=float(highs[last_extreme_idx]),
+                        log_price=float(log_highs[last_extreme_idx]),
                         type_str="HIGH",
-                        time=self.df['Date'].iloc[last_extreme_idx]
+                        time=dates[last_extreme_idx]
                     ))
                     direction = -1
                     last_extreme_price = current_low
@@ -215,10 +234,10 @@ class DailyElliottWaveEngine:
                 if current_high >= last_extreme_price * (1.0 + threshold):
                     pivots.append(Pivot(
                         index=int(last_extreme_idx),
-                        price=float(self.df['Low'].iloc[last_extreme_idx]),
-                        log_price=float(self.df['Log_Low'].iloc[last_extreme_idx]),
+                        price=float(lows[last_extreme_idx]),
+                        log_price=float(log_lows[last_extreme_idx]),
                         type_str="LOW",
-                        time=self.df['Date'].iloc[last_extreme_idx]
+                        time=dates[last_extreme_idx]
                     ))
                     direction = 1
                     last_extreme_price = current_high
@@ -226,14 +245,14 @@ class DailyElliottWaveEngine:
 
         # Append last bar as a temporary pivot to anchor the current leg
         if pivots and pivots[-1].index != end_idx:
-            last_close = float(self.df['Close'].iloc[end_idx])
+            last_close = float(closes[end_idx])
             last_type = "HIGH" if pivots[-1].type == "LOW" else "LOW"
             pivots.append(Pivot(
                 index=end_idx,
                 price=last_close,
-                log_price=float(self.df['Log_Close'].iloc[end_idx]),
+                log_price=float(log_closes[end_idx]),
                 type_str=last_type,
-                time=self.df['Date'].iloc[end_idx]
+                time=dates[end_idx]
             ))
             
         return pivots

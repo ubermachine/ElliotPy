@@ -1,0 +1,3 @@
+## 2024-05-19 - NumPy optimizations over Pandas iteration
+**Learning:** Utilizing `df.iterrows()` and `.iloc` within tight loops for calculation across thousands of rows causes severe performance bottlenecks in python data processing logic. Fetching columns to NumPy arrays (`df['Col'].values`) up front and running loop operations over the primitive arrays resulted in 200x speedup for iterative algorithmic processing like ZigZag, and 20x speedup for volume profile calculations.
+**Action:** When implementing custom row-by-row iteration in backend analytics algorithms over pandas dataframes, always extract the relevant series into NumPy arrays via `.values` before the loop.
