@@ -1,0 +1,3 @@
+## 2026-09-26 - Pandas `.iloc` Anti-Pattern in Tight Loops
+**Learning:** Calling `df['Col'].iloc[i]` or `df.iterrows()` inside tight processing loops (like `run_adaptive_zigzag`) is a massive performance bottleneck due to Pandas series boxing and indexing overhead.
+**Action:** Extract raw numpy arrays before looping using `df['Col'].values` and index into the array `vals[i]`. For datetime columns, explicitly convert with `df['Date'].dt.to_pydatetime()` if it's a `datetime64` dtype to maintain compatibility with standard Python datetime objects in pivots. Similarly, prefer `np.argmax(arr)` / `np.argmin(arr)` over `df['Col'].idxmax()`.
